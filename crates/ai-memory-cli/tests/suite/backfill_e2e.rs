@@ -79,6 +79,17 @@ mod slow {
         None
     }
 
+    fn status_json(data_dir: &Path, home: &Path, cwd: &Path, base: &str) -> Value {
+        serde_json::from_str(&run_cli(
+            &["status", "--json"],
+            data_dir,
+            home,
+            Some(cwd),
+            base,
+        ))
+        .expect("status JSON remains compatible")
+    }
+
     /// Call a memory tool over the stateless Streamable-HTTP `/mcp` transport
     /// (the default `serve` mode: no `initialize` handshake needed) and return
     /// the joined text of the tool result.
@@ -294,6 +305,41 @@ mod slow {
             session_count(&client, &base, WORKSPACE, PROJECT).await,
             1,
             "the re-run must not duplicate the imported session",
+        );
+
+        let observations_before = status_json(data_dir.path(), home.path(), &cwd, &base)["counts"]
+            ["observations"]
+            .as_u64()
+            .unwrap();
+        let forced: Value = serde_json::from_str(&run_cli(
+            &[
+                "backfill",
+                "--workspace",
+                WORKSPACE,
+                "--project",
+                PROJECT,
+                "--force",
+                "--json",
+            ],
+            data_dir.path(),
+            home.path(),
+            Some(&cwd),
+            &base,
+        ))
+        .expect("forced replay report");
+        assert_eq!(forced["imported_sessions"], 1);
+        assert_eq!(
+            session_count(&client, &base, WORKSPACE, PROJECT).await,
+            1,
+            "a real second replay must reuse the session",
+        );
+        let status = status_json(data_dir.path(), home.path(), &cwd, &base);
+        assert!(status["ingest"]["replayed"].as_u64().unwrap_or(0) >= 2);
+        assert!(status["ingest"]["ignored_end"].as_u64().unwrap_or(0) >= 1);
+        assert_eq!(
+            status["counts"]["observations"].as_u64(),
+            Some(observations_before),
+            "the second replay must create no duplicate observations"
         );
 
         drop(server);

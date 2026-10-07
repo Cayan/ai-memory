@@ -512,21 +512,43 @@ the server first (any HTTP answer counts as reachable, so an older build
 without `/healthz` still passes), prints one loud warning naming the server
 URL and what the degraded run means, and launches the harness anyway:
 
-- **Lost this run**: no workstream lease or cross-harness context packet, no
-  transcript import into the ledger, and no cross-harness handoff delivery.
-  Nothing that needs the server runs: no prepare, lease, link, heartbeat,
-  context fetch, status check, finish, or import.
-- **Still works**: the harness's ai-memory lifecycle hooks (if installed) keep
-  capturing — events spool locally and drain automatically when the server
-  returns. An existing MCP registration degrades to no-recall for the session
-  rather than blocking it (the same principle as `docs/mcp-install.md`'s
-  optional-mode entries: an unreachable memory server costs you recall, not
-  the session).
+- **Unavailable during the run**: no workstream lease or cross-harness context
+  packet, immediate transcript import, or handoff delivery. Nothing that needs
+  the server runs: no prepare, lease, link, heartbeat, context fetch, status
+  check, finish, or import.
+- **Recovered afterward**: recovery requires both the `ai-memory run` client
+  and server to be upgraded to the release that provides `ai-memory recover`
+  and modern per-item hook acknowledgements. The harness's ai-memory lifecycle
+  hooks (if installed) spool events locally. After the child exits, the launcher
+  discovers its native session and appends only bounded metadata (never
+  transcript content or secrets) to an owner-only local recovery journal. Run
+  `ai-memory recover` when the server returns: under the spool's exclusive
+  drain lock it first quarantines entries correlated to each journaled session,
+  drains unrelated entries, then re-exports the exact native transcript and
+  replays session start, content, and session end through the existing
+  sanitized `/hook/batch` backfill path. A successful replay deletes the
+  quarantine; failure restores it. Antigravity's native store has no supported
+  transcript exporter, so its degraded launch is still journaled explicitly as
+  spool-only and recovery never invokes its exporter. Its correlated entries
+  are quarantined and the journal clears as `recovered-via-spool` only after
+  their durable delivery was confirmed.
+  An empty spool, a correlated prior drop, or a launch with no hook evidence
+  stays journaled with a manual-repair status. Stable recovery ingest keys retain the
+  exact session, agent, event kind, and sanitized event identity until
+  session/project deletion; an ordinary writer cannot preclaim one for another
+  event. Ordinary hook keys still expire after 30 days. An existing MCP
+  registration still degrades to no-recall during the outage rather than
+  blocking the session.
 - **Sessions**: because no lease exists there is no mutual exclusion against
   another launcher in the same checkout, so a degraded launch never adopts or
-  resumes a session implicitly. An explicit native session selector
-  (`claude --resume <id>`, `codex continue`, …) still resumes — you named the
-  session — and everything else starts a fresh session.
+  resumes a session implicitly. An explicit native session selector still
+  resumes the named session; before such a resume the launcher persists the
+  native adapter's exact pre-launch cursor, and recovery exports only records
+  after it. If that cursor cannot be proven, the launch remains usable but is
+  not journaled for automatic replay. Otherwise the launcher snapshots
+  checkout-local candidates before spawn and journals only when exactly one new
+  session appears. Ambiguous concurrent launches are not journaled and print
+  the manual `backfill --force --session <id>` recovery action.
 - **Auto-wire**: the first-launch hook install still happens (it is local and
   idempotent, and capture must spool offline), but no MCP entry is registered
   for the now-unreachable server and no completion sentinel is written, so the
@@ -539,17 +561,39 @@ URL and what the degraded run means, and launches the harness anyway:
   not an error.
 
 When the child exits, the launcher prints that the run was not recorded on the
-server and how many hook events remain spooled locally (oldest first by age).
-Spooled events are bounded: they are dropped after the configured number of
-failed drain passes (8 by default), 7 days of age, or the 10,000-file spool
-cap. For a planned outage set `AI_MEMORY_HOOK_SPOOL_MAX_ATTEMPTS=0` to disable
-only the attempt-count drops (see `docs/install.md`).
+server, how many hook events remain spooled locally, and that the run was
+journaled for `ai-memory recover`. The journal is capped at 256 entries;
+once full it refuses new entries with an actionable warning instead of evicting
+unrecovered work. It is written atomically as owner-only local state; Unix lock opens use
+`O_NOFOLLOW` and the atomic replacement rechecks the destination immediately
+before rename. Windows applies an owner-only ACL and rejects observed symlinks,
+but reparse-point race hardening still requires the PR `windows` CI lane before
+merge. Spooled events remain separately
+bounded: they are dropped after the configured number of failed drain passes
+(8 by default), 7 days of age, or the 10,000-file spool cap. For a planned
+outage set `AI_MEMORY_HOOK_SPOOL_MAX_ATTEMPTS=0` to disable only the
+attempt-count drops (see `docs/install.md`).
 
 If the server dies *during* a run — after the lease was acquired — the exit
-code is still preserved: the unimported transcript is reported as a warning
-with the exact `ai-memory finalize-session` command that repairs the record
-once the server is back, and the orphaned lease expires on its own within 90
-seconds.
+code is still preserved. The journal records the original run id, native
+session locator, absolute store path, and exit code; repository branch and path
+state are not persisted. Recovery retries validate the exact ordered semantic
+transcript interval and native identity, and omit a regenerated checkpoint, so
+repository changes during downtime are not claimed as the failed run's state and
+a successful finish cannot create a second checkpoint event.
+`ai-memory recover` uses the owner-authorized `/recover/finish` route to resume
+an expired original run only when no newer run superseded it; ordering is the
+explicit `(started_at, SQLite insertion order)` tuple, so timestamp ties cannot
+revive an older run. Another operator, a superseded run, and any finished-run
+payload that is not an exact replay of already indexed events/cursor/exit state
+remain refused.
+Successful entries are removed, while failed entries remain with a bounded
+sanitized reason. Each journal request and the whole journal pass have time
+budgets. A spool pass that drops anything is reported incomplete and keeps all
+journal entries; correlated entries are quarantined before that pass and can
+only be deleted after a later clean pass and exact transcript replay. If the
+server is still unreachable, `recover` exits successfully
+and prints the remaining spool/journal counts and startup guidance.
 
 To restore the strict behavior (fail with the usual "could not reach …"
 diagnosis and never start the agent), pass `--require-server`, set
