@@ -22,8 +22,9 @@ use crate::types::{ChatRequest, ChatResponse, Role};
 
 /// Model used when `AI_MEMORY_LLM_MODEL` is unset.
 ///
-/// Fast Cursor model. Override with any id `agent --list-models` prints.
-pub const CURSOR_DEFAULT_MODEL: &str = "composer-2.5-fast";
+/// `agent --list-models` labels this id "Grok 4.6". Override with any other id
+/// from that list.
+pub const CURSOR_DEFAULT_MODEL: &str = "cursor-grok-4.6-high";
 
 const MAX_STDOUT_BYTES: usize = 1024 * 1024;
 const MAX_STDERR_BYTES: usize = 64 * 1024;

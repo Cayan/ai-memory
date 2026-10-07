@@ -10,8 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Added the `cursor` LLM provider. Consolidation calls the logged-in Cursor
   Agent CLI (`agent --print --mode ask`) so a Cursor subscription can drive
-  summaries without an API key. The default model is `composer-2.5-fast`;
-  `AI_MEMORY_CURSOR_AGENT` overrides the binary. The provider never passes
+  summaries without an API key. The default model is `cursor-grok-4.6-high`
+  ("Grok 4.6"). `AI_MEMORY_CURSOR_AGENT` overrides the binary. The provider never passes
   `--yolo` or `--force`, because the prompt is captured session text.
 
 
