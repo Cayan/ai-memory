@@ -1069,6 +1069,12 @@ LLM_BASE_URL               the unprefixed cross-tool convention, accepted for
                            an operator's leftover Ollama URL must not silently
                            rewrite every Gemini request into a 404
 AI_MEMORY_LLM_COMPAT_STRICT true by default; false disables response_format=json_schema
+AI_MEMORY_LLM_COMPAT_DISABLE_THINKING  openai-compat only, false by default; true sends
+                           chat_template_kwargs:{"enable_thinking":false} on every
+                           request (vLLM / SGLang thinking models). A structured
+                           response that stops with finish_reason=length, or a 2xx
+                           with empty message.content, is a terminal error
+                           (classes truncated-response / empty-content)
 AI_MEMORY_LLM_TIMEOUT_SECS  per-request timeout for chat providers; 300 by default
 AI_MEMORY_LLM_REASONING_EFFORT  optional reasoning/thinking effort
                            (none|minimal|low|medium|high|xhigh|max|ultra|persistent)

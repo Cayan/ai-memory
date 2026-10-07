@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Added `AI_MEMORY_LLM_COMPAT_DISABLE_THINKING` for the `openai-compat`
+  provider (opt-in, off by default, ignored by every other provider): when
+  set, every chat request carries
+  `chat_template_kwargs: {"enable_thinking": false}`, so thinking-capable
+  local engines (vLLM / SGLang serving Qwen3-class models) spend the output
+  budget on the structured payload instead of a reasoning pass. (#PRNUM)
+
 ### Fixed
 - Fixed the scheduled auto-improve tests' intermittent empty log captures
   (the same latent flaw #1116 fixed for the hooks checkpoint test): a shared
@@ -54,6 +62,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is now kept by both, and by the PreCompact and PostCompaction checkpoints,
   which rewrote it the same way. The write no longer stamps
   `observation_generation`. (#1138)
+- Fixed structured LLM responses stopped at the output budget
+  (`finish_reason = "length"`) or returned without usable content: they now
+  fail with redacted terminal errors, without copying the response. (#1130)
 - Fixed the hook spool charging a spooled event's retry budget while the
   server was unreachable: an endpoint-level delivery failure (connection
   refused, timeout, DNS — the existing `Unreachable` classification) no
