@@ -2394,7 +2394,7 @@ Linux, and macOS. This does not rewrite line endings in user-authored files.
 |---|---|
 | `--no-skills` | Refresh only the markered instruction block. |
 | `--skills-scope <scope>` | Choose project-local or user-global skill roots. Values: `project`, `global`. Defaults to `project`. |
-| `--skills-agent <agent>` | Choose `.claude/skills`, `.agents/skills`, `.devin/skills`, `.grok/skills`, or both Claude/Agents roots. Values: `claude-code`, `agents`, `devin`, `grok`, `both`. By default, `CLAUDE.md` targets imply `claude-code`, `AGENTS.md` targets imply `agents`, and both instruction files imply `both`. |
+| `--skills-agent <agent>` | Choose `.claude/skills`, `.agents/skills`, `.devin/skills`, `.grok/skills`, GitHub Copilot CLI's `.github/skills`, or both Claude/Agents roots. Values: `claude-code`, `agents`, `devin`, `grok`, `copilot-cli`, `both`. By default, `CLAUDE.md` targets imply `claude-code`, `AGENTS.md` targets imply `agents`, and both instruction files imply `both`. |
 | `--skills-target-dir <dir>` | Write managed skill directories below an explicit root instead of inferring from scope and agent. |
 | `--skills-force` | Replace unmanaged same-name skills during `install-instructions`; without it, they are left untouched and the command exits with an actionable error. |
 
@@ -2406,6 +2406,7 @@ ai-memory install-skills
 ai-memory install-skills --scope global --agent agents
 ai-memory install-skills --scope global --agent devin
 ai-memory install-skills --scope global --agent grok
+ai-memory install-skills --scope global --agent copilot-cli
 ai-memory install-skills --agent both --print
 ai-memory install-skills --target-dir .custom/skills --force
 ```
@@ -2415,17 +2416,17 @@ ai-memory install-skills --target-dir .custom/skills --force
 | Flag | Meaning |
 |---|---|
 | `--scope <scope>` | Install into this project or the current user's global skill roots. Values: `project`, `global`. Defaults to `project`. |
-| `--agent <agent>` | Install into Claude Code's skill root, the cross-agent skill root, Devin's skill root, Grok's skill root, or both Claude/Agents roots. Values: `claude-code`, `agents`, `devin`, `grok`, `both`. Defaults to `claude-code`. |
+| `--agent <agent>` | Install into Claude Code's skill root, the cross-agent skill root, Devin's skill root, Grok's skill root, GitHub Copilot CLI's skill root, or both Claude/Agents roots. Values: `claude-code`, `agents`, `devin`, `grok`, `copilot-cli`, `both`. Defaults to `claude-code`. |
 | `--target-dir <dir>` | Write managed skill directories below an explicit root; `--scope` and `--agent` are ignored. |
 | `--print` | Print target paths and `SKILL.md` contents without writing files. |
 | `--force` | Replace unmanaged same-name skills; without it, user-authored same-name skills are preserved. |
 
 Default skill target roots:
 
-| Scope | `--agent claude-code` | `--agent agents` | `--agent devin` | `--agent grok` |
-|---|---|---|---|---|
-| `project` | `.claude/skills` | `.agents/skills` | `.devin/skills` | `.grok/skills` |
-| `global` | `~/.claude/skills` | `~/.agents/skills` | Windows: `%APPDATA%\devin\skills`; non-Windows: `~/.devin/skills` | `$GROK_HOME/skills` (default `~/.grok/skills`) |
+| Scope | `--agent claude-code` | `--agent agents` | `--agent devin` | `--agent grok` | `--agent copilot-cli` |
+|---|---|---|---|---|---|
+| `project` | `.claude/skills` | `.agents/skills` | `.devin/skills` | `.grok/skills` | `.github/skills` |
+| `global` | `~/.claude/skills` | `~/.agents/skills` | Windows: `%APPDATA%\devin\skills`; non-Windows: `~/.devin/skills` | `$GROK_HOME/skills` (default `~/.grok/skills`) | `$COPILOT_HOME/skills` (default `~/.copilot/skills`) |
 
 Each managed skill is written as `<root>/<skill-name>/SKILL.md`.
 

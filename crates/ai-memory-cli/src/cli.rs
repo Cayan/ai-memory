@@ -1757,6 +1757,9 @@ pub enum InstallSkillsAgent {
     Devin,
     /// Grok Build CLI's `.grok/skills` directory.
     Grok,
+    /// GitHub Copilot CLI's `.github/skills` (project) or
+    /// `$COPILOT_HOME/skills` (global, default `~/.copilot/skills`) directory.
+    CopilotCli,
     /// Hermes Agent's `.hermes/skills` directory.
     Hermes,
     /// Install into both Claude Code and `.agents` skill directories.

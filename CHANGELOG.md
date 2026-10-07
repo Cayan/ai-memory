@@ -19,6 +19,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and the existing SessionStart hook delivers the workstream context. The
   first managed launch auto-wires Copilot's hooks and MCP, and `doctor` now
   counts its local sessions. Verified against Copilot CLI 1.0.92. (#1040)
+- GitHub Copilot CLI is now a first-class routing target:
+  `install-skills --agent copilot-cli` (and `install-instructions
+  --skills-agent copilot-cli`) writes the managed Agent Skills to the
+  repository's `.github/skills` or, globally, to `$COPILOT_HOME/skills`
+  (default `~/.copilot/skills`); `memory_install_self_routing` returns
+  `copilot_cli` filename and skill-root hints; the routing snippet, the
+  routing-install skill, and the MCP instructions name Copilot CLI with
+  `AGENTS.md`; and `uninstall` sweeps both Copilot roots, removing only
+  marker-bearing ai-memory skills. (#1040)
 
 ## [2.6.0] - 2026-10-07
 
