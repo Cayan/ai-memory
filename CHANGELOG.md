@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   set, every chat request carries
   `chat_template_kwargs: {"enable_thinking": false}`, so thinking-capable
   local engines (vLLM / SGLang serving Qwen3-class models) spend the output
-  budget on the structured payload instead of a reasoning pass. (#PRNUM)
+  budget on the structured payload instead of a reasoning pass. (#1130)
 
 ### Fixed
 - Fixed the scheduled auto-improve tests' intermittent empty log captures
