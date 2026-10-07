@@ -11,6 +11,7 @@ use crate::AnthropicProvider;
 use crate::CodexProvider;
 use crate::CopilotEmbedder;
 use crate::CopilotProvider;
+use crate::CursorAgentProvider;
 use crate::GeminiProvider;
 use crate::OpenAiCompatProvider;
 use crate::OpenAiOAuthProvider;
@@ -45,6 +46,8 @@ pub enum ProviderChoice {
     /// OpenCode cloud API (OpenAI-compatible endpoint). Defaults to the Go
     /// endpoint; `base_url` selects Zen's general catalogue instead.
     OpenCode,
+    /// Cursor subscription via the logged-in `agent` CLI (`--print --mode ask`).
+    Cursor,
 }
 
 impl ProviderChoice {
@@ -61,6 +64,7 @@ impl ProviderChoice {
             Self::Copilot => "copilot",
             Self::AnthropicOAuth => "anthropic-oauth",
             Self::OpenCode => "opencode",
+            Self::Cursor => "cursor",
         }
     }
 
@@ -87,6 +91,7 @@ impl ProviderChoice {
             Self::OpenCode => AuthRequirement::RequiredApiKey {
                 env_var: "OPENCODE_API_KEY",
             },
+            Self::Cursor => AuthRequirement::CursorCli,
         }
     }
 
@@ -464,6 +469,12 @@ pub fn build_provider(config: ProviderConfig) -> LlmResult<Arc<dyn LlmProvider>>
                     .with_extra_headers(extra_headers),
             ))
         }
+        ProviderChoice::Cursor => {
+            let auth = config.auth.require_cursor_auth()?;
+            Ok(Arc::new(
+                CursorAgentProvider::new(auth, config.model).with_timeout_secs(timeout),
+            ))
+        }
         ProviderChoice::OpenCode => {
             let key = config.auth.require_api_key()?;
             // Defaults to Go; an operator reaches Zen's general catalogue
@@ -506,6 +517,8 @@ mod tests {
             ProviderChoice::OpenAiOAuth,
             ProviderChoice::Copilot,
             ProviderChoice::AnthropicOAuth,
+            ProviderChoice::Codex,
+            ProviderChoice::Cursor,
         ] {
             assert!(
                 !choice.endpoint_is_operator_chosen(),
@@ -557,6 +570,11 @@ mod tests {
         assert_eq!(
             ProviderChoice::AnthropicOAuth.auth_requirement(),
             AuthRequirement::AnthropicOAuthToken
+        );
+        assert_eq!(ProviderChoice::Cursor.name(), "cursor");
+        assert_eq!(
+            ProviderChoice::Cursor.auth_requirement(),
+            AuthRequirement::CursorCli
         );
     }
 

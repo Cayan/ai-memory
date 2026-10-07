@@ -367,6 +367,7 @@ fn build_llm_provider(
             ProviderAuth::copilot(tf.to_path_buf(), None, None, base_url.map(str::to_string))
         }
         AuthRequirement::AnthropicOAuthToken => ProviderAuth::anthropic_oauth_token(api_key),
+        AuthRequirement::CursorCli => ProviderAuth::cursor("agent"),
     };
 
     let config = ProviderConfig {

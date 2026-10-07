@@ -328,6 +328,7 @@ fn resolve_provider(side: &str, args: &AbArgs) -> Result<ResolvedConfig> {
             base_url.clone(),
         ),
         AuthRequirement::AnthropicOAuthToken => ProviderAuth::anthropic_oauth_token(api_key),
+        AuthRequirement::CursorCli => ProviderAuth::cursor("agent"),
     };
 
     Ok(ResolvedConfig {

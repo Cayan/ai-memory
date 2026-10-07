@@ -47,6 +47,7 @@ Recommended defaults:
 | `openai` | `gpt-5.4-mini` | Cheaper and faster hosted option. |
 | `openai-oauth` | `gpt-5.5` | ChatGPT Pro/Plus/Codex backend via `ai-memory auth login openai-oauth`; no Platform API key. |
 | `codex` | `gpt-5.6-luna` | Reuse the Codex CLI-owned `auth.json`; access-token refresh remains owned by `codex app-server`. |
+| `cursor` | `composer-2.5-fast` | Cursor subscription via the logged-in `agent` CLI. Runs `agent --print --mode ask` (read-only). Does not pass `--yolo`. |
 | `copilot` | `gpt-5.5` | GitHub Copilot Chat backend via `ai-memory auth login copilot` or `COPILOT_GITHUB_TOKEN`; requires a Copilot subscription. |
 | `gemini` | `gemini-3.5-flash` | Google-hosted option with a generous free tier. |
 | `opencode` | `mimo-v2.6-flash` | OpenCode Go or Zen via `OPENCODE_API_KEY`. Go is the default endpoint; `AI_MEMORY_LLM_BASE_URL` selects Zen. Set `AI_MEMORY_LLM_MODEL` to an id the chosen endpoint serves. |
@@ -73,6 +74,20 @@ export AI_MEMORY_LLM_MODEL=gpt-5.6-luna
 export AI_MEMORY_LLM_REASONING_EFFORT=medium
 ai-memory llm-test --provider codex --model gpt-5.6-luna --prompt "Reply with OK"
 ai-memory llm-test --provider codex --model gpt-5.6-luna --structured --prompt "Return a short answer"
+```
+
+`cursor` uses the Cursor Agent already logged in on this machine. Set
+`AI_MEMORY_LLM_PROVIDER=cursor`. The default model is `composer-2.5-fast`;
+any id from `agent --list-models` works. `AI_MEMORY_CURSOR_AGENT` overrides
+the binary. The provider writes the prompt into a temporary workspace and
+calls `agent --print --mode ask --trust`. It does not pass `--yolo` or
+`--force`: consolidation text is untrusted captured content, and those flags
+would allow tool execution.
+
+```bash
+export AI_MEMORY_LLM_PROVIDER=cursor
+export AI_MEMORY_LLM_MODEL=composer-2.5-fast
+ai-memory llm-test --provider cursor --model composer-2.5-fast --prompt "Reply with OK"
 ```
 
 Codex credential storage mode `file` is supported. `auto` works only when its

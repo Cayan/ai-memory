@@ -12,9 +12,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use ai_memory_llm::{
-    AuthRequirement, Candidate, EmbedderChoice, EmbedderConfig, ExtraHeaders, FallbackLlmProvider,
-    LlmError, LlmProvider, LlmResult, OPENCODE_DEFAULT_MODEL, ProviderAuth, ProviderChoice,
-    ProviderConfig, ReasoningEffort, build_provider,
+    AuthRequirement, CURSOR_DEFAULT_MODEL, Candidate, EmbedderChoice, EmbedderConfig, ExtraHeaders,
+    FallbackLlmProvider, LlmError, LlmProvider, LlmResult, OPENCODE_DEFAULT_MODEL, ProviderAuth,
+    ProviderChoice, ProviderConfig, ReasoningEffort, build_provider, cursor_executable,
 };
 use anyhow::{Context, Result};
 use figment::{
@@ -661,6 +661,7 @@ pub struct RuntimeEnv {
     platform_home: Option<PathBuf>,
     codex_home: Option<PathBuf>,
     codex_executable: Option<PathBuf>,
+    cursor_executable: Option<PathBuf>,
     server_url: Option<String>,
     auth_token: Option<String>,
     host_cwd: Option<String>,
@@ -702,6 +703,7 @@ impl RuntimeEnv {
             platform_home,
             codex_home: env_path("CODEX_HOME"),
             codex_executable: env_path("AI_MEMORY_CODEX_EXECUTABLE"),
+            cursor_executable: env_path("AI_MEMORY_CURSOR_AGENT"),
             server_url: env_string("AI_MEMORY_SERVER_URL"),
             auth_token: env_string("AI_MEMORY_AUTH_TOKEN"),
             host_cwd: env_string("AI_MEMORY_HOST_CWD"),
@@ -2184,7 +2186,7 @@ impl Config {
         let provider = provider_choice_from_str(provider_raw).ok_or_else(|| {
             LlmError::NotConfigured(format!(
                 "AI_MEMORY_LLM_PROVIDER={provider_raw} is not one of \
-                 anthropic|openai|gemini|openai-compat|openai-oauth|codex|copilot|anthropic-oauth|opencode"
+                 anthropic|openai|gemini|openai-compat|openai-oauth|codex|copilot|anthropic-oauth|opencode|cursor"
             ))
         })?;
         let model = match non_empty(self.llm_model.as_deref()) {
@@ -2205,6 +2207,7 @@ impl Config {
                     ));
                 }
                 ProviderChoice::OpenCode => OPENCODE_DEFAULT_MODEL.to_string(),
+                ProviderChoice::Cursor => CURSOR_DEFAULT_MODEL.to_string(),
             },
         };
         Ok(Some(ProviderConfig {
@@ -2244,7 +2247,7 @@ impl Config {
         let provider = provider_choice_from_str(provider_raw).ok_or_else(|| {
             LlmError::NotConfigured(format!(
                 "llm_fallbacks[{index}].provider={provider_raw} is not one of \
-                 anthropic|openai|gemini|openai-compat|openai-oauth|codex|copilot|anthropic-oauth|opencode"
+                 anthropic|openai|gemini|openai-compat|openai-oauth|codex|copilot|anthropic-oauth|opencode|cursor"
             ))
         })?;
         let model = non_empty(Some(profile.model.as_str()))
@@ -2318,6 +2321,9 @@ impl Config {
             AuthRequirement::AnthropicOAuthToken => {
                 ProviderAuth::anthropic_oauth_token(self.runtime_env.anthropic_oauth_token.clone())
             }
+            AuthRequirement::CursorCli => ProviderAuth::cursor(cursor_executable(
+                self.runtime_env.cursor_executable.as_deref(),
+            )),
         }
     }
 
@@ -2566,6 +2572,7 @@ impl Config {
             ProviderChoice::Copilot => None,
             ProviderChoice::AnthropicOAuth => None,
             ProviderChoice::OpenCode => self.runtime_env.opencode_api_key.clone(),
+            ProviderChoice::Cursor => None,
         }
     }
 
@@ -2657,6 +2664,9 @@ impl Config {
             AuthRequirement::AnthropicOAuthToken => {
                 ProviderAuth::anthropic_oauth_token(self.runtime_env.anthropic_oauth_token.clone())
             }
+            AuthRequirement::CursorCli => ProviderAuth::cursor(cursor_executable(
+                self.runtime_env.cursor_executable.as_deref(),
+            )),
         }
     }
 
@@ -2713,6 +2723,7 @@ fn provider_choice_from_str(raw: &str) -> Option<ProviderChoice> {
         "copilot" | "github-copilot" | "github_copilot" => ProviderChoice::Copilot,
         "anthropic-oauth" | "anthropic_oauth" => ProviderChoice::AnthropicOAuth,
         "opencode" | "opencode-zen" | "opencode_zen" => ProviderChoice::OpenCode,
+        "cursor" => ProviderChoice::Cursor,
         _ => return None,
     })
 }
@@ -5064,6 +5075,26 @@ mod tests {
                 "{spelling}"
             );
         }
+    }
+
+    #[test]
+    fn cursor_provider_resolves_choice_default_model_and_executable() {
+        let cfg = Config {
+            llm_provider: Some("cursor".into()),
+            runtime_env: RuntimeEnv {
+                cursor_executable: Some(PathBuf::from("/opt/cursor/agent")),
+                ..RuntimeEnv::default()
+            },
+            ..Config::default()
+        };
+
+        let provider = cfg.llm_provider_config().unwrap().unwrap();
+        let auth = provider.auth.require_cursor_auth().unwrap();
+
+        assert_eq!(provider.provider, ProviderChoice::Cursor);
+        assert_eq!(provider.model, CURSOR_DEFAULT_MODEL);
+        assert_eq!(auth.executable, PathBuf::from("/opt/cursor/agent"));
+        assert_eq!(provider.auth.requirement(), AuthRequirement::CursorCli);
     }
 
     fn load_with_toml(toml: &str) -> anyhow::Result<Config> {
