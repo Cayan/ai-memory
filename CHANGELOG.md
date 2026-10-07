@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `ai-memory run` accepts `copilot` (alias `copilot-cli`) and manages GitHub
+  Copilot CLI as a workstream harness: a fresh session gets a generated
+  `--session-id`, a returning one is resumed with `--resume=<id>`, user
+  selectors (`--resume`, `--continue`, `--session-id`, `--connect`) win,
+  utility subcommands pass through, and `--yolo` maps to Copilot's native
+  `--yolo`. Visible messages, tool calls and results, and compaction summaries
+  are imported read-only from `$COPILOT_HOME/session-state/<uuid>/events.jsonl`
+  (system prompts, hidden reasoning, hook output, and telemetry are excluded),
+  and the existing SessionStart hook delivers the workstream context. The
+  first managed launch auto-wires Copilot's hooks and MCP, and `doctor` now
+  counts its local sessions. Verified against Copilot CLI 1.0.92. (#1040)
 
 ## [2.6.0] - 2026-10-07
 

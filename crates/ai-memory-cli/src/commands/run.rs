@@ -448,6 +448,7 @@ const fn run_harness_choice(harness: ManagedHarness) -> RunHarnessChoice {
         ManagedHarness::Kiro | ManagedHarness::KiroV3 => RunHarnessChoice::Kiro,
         ManagedHarness::Grok => RunHarnessChoice::Grok,
         ManagedHarness::Antigravity => RunHarnessChoice::Antigravity,
+        ManagedHarness::Copilot => RunHarnessChoice::Copilot,
     }
 }
 
@@ -3702,6 +3703,7 @@ const fn managed_harness(choice: RunHarnessChoice) -> ManagedHarness {
         RunHarnessChoice::Kiro => ManagedHarness::Kiro,
         RunHarnessChoice::Grok => ManagedHarness::Grok,
         RunHarnessChoice::Antigravity => ManagedHarness::Antigravity,
+        RunHarnessChoice::Copilot => ManagedHarness::Copilot,
     }
 }
 
@@ -3726,6 +3728,7 @@ const fn managed_harness_from_agent(agent: AgentKind) -> Option<ManagedHarness> 
         AgentKind::KiroCli => Some(ManagedHarness::Kiro),
         AgentKind::Grok => Some(ManagedHarness::Grok),
         AgentKind::AntigravityCli => Some(ManagedHarness::Antigravity),
+        AgentKind::CopilotCli => Some(ManagedHarness::Copilot),
         _ => None,
     }
 }
@@ -5379,6 +5382,35 @@ mod tests {
         assert_eq!(
             args.native_args,
             ["--model", "kimi-for-coding"].map(OsString::from).to_vec()
+        );
+    }
+
+    #[test]
+    fn copilot_aliases_select_the_managed_adapter() {
+        for name in ["copilot", "copilot-cli"] {
+            let cli = Cli::try_parse_from([
+                OsStr::new("ai-memory"),
+                OsStr::new("run"),
+                OsStr::new(name),
+                OsStr::new("--model"),
+                OsStr::new("gpt-5.6"),
+            ])
+            .unwrap();
+            let CliCommand::Run(args) = cli.command else {
+                panic!("expected run command");
+            };
+            let choice = args.harness.expect("explicit harness");
+            assert_eq!(choice, crate::cli::RunHarnessChoice::Copilot, "{name}");
+            assert_eq!(managed_harness(choice), ManagedHarness::Copilot);
+            assert_eq!(run_harness_choice(ManagedHarness::Copilot), choice);
+            assert_eq!(
+                args.native_args,
+                ["--model", "gpt-5.6"].map(OsString::from).to_vec()
+            );
+        }
+        assert_eq!(
+            managed_harness_from_agent(AgentKind::CopilotCli),
+            Some(ManagedHarness::Copilot)
         );
     }
 

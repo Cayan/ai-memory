@@ -237,9 +237,10 @@ native HTTP or generated bridge paths.
 
 ## GitHub Copilot CLI
 
-**Status:** MCP and lifecycle hooks are supported. Handoffs are not injected
-at `SessionStart` yet (see below), and there is no managed workstream
-(`ai-memory run copilot`).
+**Status:** MCP and lifecycle hooks are supported, the `SessionStart` hook
+injects the pending handoff (see below), and `ai-memory run copilot` launches
+Copilot CLI as a managed workstream harness (see
+[managed workstreams](managed-workstreams.md)).
 
 **Config files:** `$COPILOT_HOME/mcp-config.json` for MCP and
 `$COPILOT_HOME/hooks/ai-memory.json` for lifecycle hooks (`COPILOT_HOME`

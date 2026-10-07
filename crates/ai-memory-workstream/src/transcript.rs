@@ -56,9 +56,9 @@ struct FileCursor {
     flavor: Option<FileFlavor>,
     /// Hash of every committed byte through `offset`. Kimi Code and Grok can
     /// rewrite their journals in place (Kimi on fork/compaction/resume, Grok
-    /// on rewind); Kiro's append-only behavior is not documented. Those
-    /// adapters validate this prefix before trusting the byte offset. Other
-    /// JSONL adapters remain offset-only.
+    /// on rewind); Kiro's and Copilot's append-only behavior is not
+    /// documented. Those adapters validate this prefix before trusting the
+    /// byte offset. Other JSONL adapters remain offset-only.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     prefix_sha256: Option<String>,
 }
@@ -94,7 +94,11 @@ const fn file_flavor(harness: ManagedHarness) -> Option<FileFlavor> {
 const fn journal_rewrites_in_place(harness: ManagedHarness) -> bool {
     matches!(
         harness,
-        ManagedHarness::Kimi | ManagedHarness::Kiro | ManagedHarness::KiroV3 | ManagedHarness::Grok
+        ManagedHarness::Kimi
+            | ManagedHarness::Kiro
+            | ManagedHarness::KiroV3
+            | ManagedHarness::Grok
+            | ManagedHarness::Copilot
     )
 }
 
@@ -711,6 +715,13 @@ fn export_jsonl(
                 &mut losses,
             ),
             ManagedHarness::Grok => parse_grok(
+                &value,
+                native_session_id,
+                &record_id,
+                &mut events,
+                &mut losses,
+            ),
+            ManagedHarness::Copilot => parse_copilot(
                 &value,
                 native_session_id,
                 &record_id,
@@ -1978,6 +1989,146 @@ fn parse_grok(
     }
 }
 
+/// Copilot CLI `events.jsonl` records (verified on 1.0.92). Each record is
+/// `{type, data, id, timestamp, parentId}`. Only the user's typed text, the
+/// assistant's visible text and tool requests, completed tool output, and
+/// compaction summaries are imported. `transformedContent` (the prompt with
+/// injected datetime/context), `reasoningText`/`reasoningOpaque`, hook output
+/// (where ai-memory's own startup packet lands), permission prompts, model
+/// snapshots, and session telemetry never reach the ledger.
+fn parse_copilot(
+    value: &Value,
+    session: &str,
+    record_id: &str,
+    events: &mut Vec<NewWorkstreamEvent>,
+    losses: &mut Vec<String>,
+) {
+    let record_type = value
+        .get("type")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let data = value.get("data").unwrap_or(&Value::Null);
+    match record_type {
+        "system.message" => {
+            losses.push("Copilot system prompt records were intentionally excluded".into());
+        }
+        "model.messages_snapshot" => {
+            losses.push("Copilot model message snapshots were intentionally excluded".into());
+        }
+        "user.message" => {
+            if let Some(text) = data.get("content").and_then(Value::as_str) {
+                push_event(
+                    events,
+                    AgentKind::CopilotCli,
+                    session,
+                    record_id,
+                    0,
+                    WorkstreamEventKind::Message,
+                    Some("user"),
+                    text,
+                    timestamp(value),
+                    json!({}),
+                );
+            }
+        }
+        "assistant.message" => {
+            if ["reasoningText", "reasoningOpaque", "reasoningBlocks"]
+                .iter()
+                .any(|key| data.get(*key).is_some_and(|value| !value.is_null()))
+            {
+                losses.push("Copilot hidden reasoning was intentionally excluded".into());
+            }
+            let block_count = match data.get("content").and_then(Value::as_str) {
+                Some(text) if !text.trim().is_empty() => {
+                    push_event(
+                        events,
+                        AgentKind::CopilotCli,
+                        session,
+                        record_id,
+                        0,
+                        WorkstreamEventKind::Message,
+                        Some("assistant"),
+                        text,
+                        timestamp(value),
+                        json!({}),
+                    );
+                    1
+                }
+                _ => 0,
+            };
+            let requests = data
+                .get("toolRequests")
+                .and_then(Value::as_array)
+                .map_or(&[][..], Vec::as_slice);
+            for (index, request) in requests.iter().enumerate() {
+                let name = first_string(request, &["name"]).unwrap_or("tool");
+                let arguments = request
+                    .get("arguments")
+                    .map(compact_json)
+                    .unwrap_or_default();
+                push_event(
+                    events,
+                    AgentKind::CopilotCli,
+                    session,
+                    record_id,
+                    block_count + index,
+                    WorkstreamEventKind::ToolCall,
+                    Some("assistant"),
+                    &format!("{name}: {arguments}"),
+                    timestamp(value),
+                    json!({"tool": name}),
+                );
+            }
+        }
+        "tool.execution_complete" => {
+            let success = data.get("success").and_then(Value::as_bool);
+            // `detailedContent` repeats the output as a diff carrying absolute
+            // paths; the model-visible `content` is the portable record.
+            let body = if success == Some(false) {
+                data.get("error")
+                    .and_then(|error| error.get("message"))
+                    .and_then(Value::as_str)
+                    .map(|message| format!("error: {message}"))
+            } else {
+                data.get("result")
+                    .and_then(|result| result.get("content"))
+                    .map(value_text)
+            };
+            push_event(
+                events,
+                AgentKind::CopilotCli,
+                session,
+                record_id,
+                0,
+                WorkstreamEventKind::ToolResult,
+                Some("tool"),
+                body.as_deref().unwrap_or_default(),
+                timestamp(value),
+                json!({"success": success}),
+            );
+        }
+        "session.compaction_complete" => {
+            if data.get("success").and_then(Value::as_bool) == Some(true)
+                && let Some(text) = data.get("summaryContent").and_then(Value::as_str)
+            {
+                push_event(
+                    events,
+                    AgentKind::CopilotCli,
+                    session,
+                    record_id,
+                    0,
+                    WorkstreamEventKind::Compaction,
+                    Some("assistant"),
+                    text,
+                    timestamp(value),
+                    json!({}),
+                );
+            }
+        }
+        _ => {}
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn parse_content_blocks(
     agent: AgentKind,
@@ -2483,6 +2634,15 @@ fn locate_session_file(
         let exact = root.join(format!("{id}.db"));
         return Ok(session_path_matches(harness, &exact, id, cwd)?.then_some(exact));
     }
+    if harness == ManagedHarness::Copilot {
+        // The session directory is named by its UUID, so no scan is needed;
+        // the header still has to name this checkout.
+        if Uuid::parse_str(id).is_err() {
+            return Ok(None);
+        }
+        let exact = root.join(id).join("events.jsonl");
+        return Ok(session_path_matches(harness, &exact, id, cwd)?.then_some(exact));
+    }
     if harness == ManagedHarness::Claude {
         let encoded = cwd.to_string_lossy().replace('/', "-");
         let exact = root.join(encoded).join(format!("{id}.jsonl"));
@@ -2631,6 +2791,16 @@ fn transcript_file(harness: ManagedHarness, path: &Path) -> bool {
         // One SQLite database per conversation, named by its id.
         return path.extension().is_some_and(|ext| ext == "db");
     }
+    if harness == ManagedHarness::Copilot {
+        // `<session-state>/<uuid>/events.jsonl` only; checkpoints, files and
+        // research artifacts in the same directory are not transcripts.
+        return path.file_name().and_then(|name| name.to_str()) == Some("events.jsonl")
+            && path
+                .parent()
+                .and_then(|dir| dir.file_name())
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| Uuid::parse_str(name).is_ok());
+    }
     path.extension().is_some_and(|ext| ext == "jsonl")
         || matches!(harness, ManagedHarness::Pi | ManagedHarness::Omp) && temporary_transcript(path)
 }
@@ -2658,6 +2828,9 @@ fn session_header(harness: ManagedHarness, path: &Path) -> Result<Option<(String
     }
     if harness == ManagedHarness::Antigravity {
         return antigravity_session_header(path);
+    }
+    if harness == ManagedHarness::Copilot {
+        return copilot_session_header(path);
     }
     let mut reader = BufReader::new(File::open(path)?);
     let mut line = String::new();
@@ -2693,7 +2866,8 @@ fn session_header(harness: ManagedHarness, path: &Path) -> Result<Option<(String
             | ManagedHarness::Kiro
             | ManagedHarness::KiroV3
             | ManagedHarness::Grok
-            | ManagedHarness::Antigravity => (None, None),
+            | ManagedHarness::Antigravity
+            | ManagedHarness::Copilot => (None, None),
         };
         if let (Some(id), Some(cwd)) = (id, cwd) {
             return Ok(Some((id.to_string(), PathBuf::from(cwd))));
@@ -2740,6 +2914,46 @@ fn command_code_session_header(path: &Path) -> Result<Option<(String, PathBuf)>>
         || timestamp.parse::<jiff::Timestamp>().is_err()
         || !cwd.is_absolute()
     {
+        return Ok(None);
+    }
+    Ok(Some((id.to_string(), cwd)))
+}
+
+/// Copilot CLI opens every `events.jsonl` with a `session.start` record
+/// naming the session and its working directory. Fail closed when that first
+/// record is missing, oversized, or disagrees with the directory name.
+fn copilot_session_header(path: &Path) -> Result<Option<(String, PathBuf)>> {
+    let Some(dir_id) = path
+        .parent()
+        .and_then(|dir| dir.file_name())
+        .and_then(|name| name.to_str())
+    else {
+        return Ok(None);
+    };
+    let mut reader = BufReader::new(File::open(path)?);
+    let mut line = String::new();
+    let read =
+        std::io::Read::take(&mut reader, (MAX_EVENT_BYTES + 1) as u64).read_line(&mut line)?;
+    if read == 0 || read > MAX_EVENT_BYTES {
+        return Ok(None);
+    }
+    let Ok(header) = serde_json::from_str::<Value>(&line) else {
+        return Ok(None);
+    };
+    if header.get("type").and_then(Value::as_str) != Some("session.start") {
+        return Ok(None);
+    }
+    let data = header.get("data").unwrap_or(&Value::Null);
+    let (Some(id), Some(cwd)) = (
+        data.get("sessionId").and_then(Value::as_str),
+        data.get("context")
+            .and_then(|context| context.get("cwd"))
+            .and_then(Value::as_str),
+    ) else {
+        return Ok(None);
+    };
+    let cwd = PathBuf::from(cwd);
+    if id != dir_id || Uuid::parse_str(id).is_err() || !cwd.is_absolute() {
         return Ok(None);
     }
     Ok(Some((id.to_string(), cwd)))
@@ -3612,6 +3826,7 @@ fn session_root(harness: ManagedHarness, home: &Path, override_dir: Option<&Path
         ManagedHarness::KiroV3 => home.join(".kiro/sessions"),
         ManagedHarness::Grok => home.join(".grok/sessions"),
         ManagedHarness::Antigravity => home.join(".gemini/antigravity-cli/conversations"),
+        ManagedHarness::Copilot => home.join(".copilot/session-state"),
     }
 }
 
@@ -3835,8 +4050,9 @@ mod tests {
                         json!({"type":"session","id":"other-id","cwd":other})
                     ),
                     // Kimi's header lives in state.json and Grok's in
-                    // summary.json, not the journal; covered by their own
-                    // discovery tests.
+                    // summary.json, not the journal; Copilot's journal must
+                    // sit in a UUID-named directory. All are covered by their
+                    // own discovery tests.
                     ManagedHarness::OpenCode
                     | ManagedHarness::OpenCode2
                     | ManagedHarness::Crush
@@ -3845,7 +4061,8 @@ mod tests {
                     | ManagedHarness::Kiro
                     | ManagedHarness::KiroV3
                     | ManagedHarness::Grok
-                    | ManagedHarness::Antigravity => {
+                    | ManagedHarness::Antigravity
+                    | ManagedHarness::Copilot => {
                         unreachable!()
                     }
                 },
@@ -5739,6 +5956,209 @@ mod tests {
             third.events[0].event_id, first.events[0].event_id,
             "identical lines must keep identical event ids across rewrites"
         );
+    }
+
+    fn copilot_session_start(id: &str, cwd: &Path) -> Value {
+        json!({"type":"session.start","data":{"sessionId":id,"version":1,
+               "producer":"copilot-agent","copilotVersion":"1.0.92",
+               "context":{"cwd":cwd}},"id":"start","timestamp":"2026-10-07T13:00:33.339Z"})
+    }
+
+    #[tokio::test]
+    async fn copilot_discovery_requires_uuid_directory_header_and_checkout() {
+        let temp = tempfile::tempdir().unwrap();
+        let cwd = temp.path().join("repo");
+        let other = temp.path().join("other");
+        let root = temp.path().join("session-state");
+        fs::create_dir_all(&cwd).unwrap();
+        fs::create_dir_all(&other).unwrap();
+
+        let matching = "318db77d-e19b-4750-82df-192a6b931437";
+        let wrong_checkout = "c79ce9b8-de85-442e-915a-1c6ec4f74719";
+        let mismatched_header = "0e88ebd2-ed54-4f5a-9056-46e041e3b44d";
+        let phantom = "5b1f0c3e-7a2d-4e8b-9c6f-1d2e3f4a5b6c";
+        for (dir, header) in [
+            (matching, copilot_session_start(matching, &cwd)),
+            (
+                wrong_checkout,
+                copilot_session_start(wrong_checkout, &other),
+            ),
+            // A header naming a session other than its directory must never
+            // surface that phantom id as a candidate.
+            (mismatched_header, copilot_session_start(phantom, &cwd)),
+        ] {
+            fs::create_dir_all(root.join(dir)).unwrap();
+            fs::write(root.join(dir).join("events.jsonl"), format!("{header}\n")).unwrap();
+        }
+        // Workspace metadata and non-UUID directories are not transcripts.
+        fs::write(root.join(matching).join("workspace.yaml"), "id: x\n").unwrap();
+        fs::create_dir_all(root.join("not-a-uuid")).unwrap();
+        fs::write(
+            root.join("not-a-uuid/events.jsonl"),
+            format!("{}\n", copilot_session_start("not-a-uuid", &cwd)),
+        )
+        .unwrap();
+
+        let sessions =
+            list_native_sessions(ManagedHarness::Copilot, temp.path(), &cwd, Some(&root), 8)
+                .await
+                .unwrap();
+        let ids: Vec<_> = sessions
+            .iter()
+            .map(|session| session.native_session_id.as_str())
+            .collect();
+        assert_eq!(ids, [matching]);
+
+        let found = locate_session_file(
+            ManagedHarness::Copilot,
+            temp.path(),
+            &cwd,
+            Some(&root),
+            matching,
+        )
+        .unwrap();
+        assert_eq!(found, Some(root.join(matching).join("events.jsonl")));
+        for foreign in [
+            wrong_checkout,
+            mismatched_header,
+            phantom,
+            "not-a-uuid",
+            "../x",
+        ] {
+            assert!(
+                !native_session_exists(
+                    ManagedHarness::Copilot,
+                    temp.path(),
+                    &cwd,
+                    Some(&root),
+                    foreign
+                )
+                .unwrap(),
+                "{foreign} must not resolve for this checkout"
+            );
+        }
+    }
+
+    #[test]
+    fn copilot_store_defaults_below_home() {
+        let home = Path::new("/home/user");
+        assert_eq!(
+            session_root(ManagedHarness::Copilot, home, None),
+            home.join(".copilot/session-state")
+        );
+    }
+
+    /// Record shapes captured from a real Copilot CLI 1.0.92 session (paths,
+    /// ids, and long fields shortened).
+    #[test]
+    fn copilot_adapter_excludes_private_records_and_keeps_visible_history() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("events.jsonl");
+        let records = [
+            copilot_session_start("318db77d-e19b-4750-82df-192a6b931437", temp.path()),
+            json!({"type":"session.model_change","data":{"newModel":"claude-sonnet-5"},"id":"r1"}),
+            json!({"type":"user.message","data":{"content":"read note.txt",
+                   "transformedContent":"<current_datetime>2026-10-07</current_datetime>\n\nread note.txt"},
+                   "id":"r2","timestamp":"2026-10-07T13:00:35.074Z"}),
+            json!({"type":"system.message","data":{"role":"system","content":"You are the GitHub Copilot CLI"},"id":"r3"}),
+            json!({"type":"hook.end","data":{"hookType":"sessionStart","success":true,
+                   "output":{"additionalContext":"ai-memory startup packet"}},"id":"r4"}),
+            json!({"type":"assistant.message","data":{"content":"","reasoningText":"private plan",
+                   "reasoningOpaque":"opaque","toolRequests":[{"toolCallId":"call-1","name":"view",
+                   "arguments":{"path":"note.txt"},"type":"function"}]},"id":"r5"}),
+            json!({"type":"tool.execution_start","data":{"toolCallId":"call-1","toolName":"view",
+                   "arguments":{"path":"note.txt"}},"id":"r6"}),
+            json!({"type":"permission.requested","data":{"permissionRequest":{"kind":"shell"}},"id":"r7"}),
+            json!({"type":"tool.execution_complete","data":{"toolCallId":"call-1","success":true,
+                   "result":{"content":"hello\n","detailedContent":"diff --git a/abs/path"}},"id":"r8"}),
+            json!({"type":"tool.execution_complete","data":{"toolCallId":"call-2","success":false,
+                   "result":null,"error":{"message":"Permission denied","code":"denied"}},"id":"r9"}),
+            json!({"type":"assistant.message","data":{"content":"hello","toolRequests":[]},"id":"r10"}),
+            json!({"type":"session.resume","data":{"context":{"cwd":temp.path()}},"id":"r11"}),
+            json!({"type":"model.messages_snapshot","data":{"messages":[{"role":"system","content":"private"}]},"id":"r12"}),
+            json!({"type":"session.compaction_complete","data":{"success":true,
+                   "summaryContent":"<overview>read a file</overview>"},"id":"r13"}),
+            json!({"type":"session.compaction_complete","data":{"success":false,
+                   "summaryContent":"failed attempt"},"id":"r14"}),
+        ];
+        let body = records
+            .iter()
+            .map(|record| format!("{record}\n"))
+            .collect::<String>();
+        fs::write(&path, body).unwrap();
+
+        let export = export_jsonl(ManagedHarness::Copilot, &path, "copilot-session", None).unwrap();
+        let contents: Vec<_> = export
+            .events
+            .iter()
+            .map(|event| (event.kind, event.content.as_str()))
+            .collect();
+        assert_eq!(
+            contents,
+            [
+                (WorkstreamEventKind::Message, "read note.txt"),
+                (
+                    WorkstreamEventKind::ToolCall,
+                    "view: {\"path\":\"note.txt\"}"
+                ),
+                (WorkstreamEventKind::ToolResult, "hello\n"),
+                (WorkstreamEventKind::ToolResult, "error: Permission denied"),
+                (WorkstreamEventKind::Message, "hello"),
+                (
+                    WorkstreamEventKind::Compaction,
+                    "<overview>read a file</overview>"
+                ),
+            ]
+        );
+        assert!(export.events.iter().all(|event| {
+            event.agent == AgentKind::CopilotCli
+                && !event.content.contains("private")
+                && !event.content.contains("startup packet")
+                && !event.content.contains("current_datetime")
+                && !event.content.contains("abs/path")
+        }));
+        for expected in [
+            "system prompt records",
+            "hidden reasoning",
+            "message snapshots",
+        ] {
+            assert!(
+                export.losses.iter().any(|loss| loss.contains(expected)),
+                "missing loss annotation for {expected}"
+            );
+        }
+        let cursor: FileCursor = serde_json::from_str(&export.source_cursor.unwrap()).unwrap();
+        assert!(cursor.prefix_sha256.is_some());
+    }
+
+    #[test]
+    fn copilot_export_is_incremental_and_holds_back_an_incomplete_record() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("events.jsonl");
+        let first_line = json!({"type":"user.message","data":{"content":"one"},"id":"a"});
+        let second_line = json!({"type":"assistant.message","data":{"content":"two"},"id":"b"});
+        // A record still being written has no trailing newline yet.
+        let partial = second_line.to_string();
+        fs::write(&path, format!("{first_line}\n{}", &partial[..10])).unwrap();
+        let first = export_jsonl(ManagedHarness::Copilot, &path, "s", None).unwrap();
+        assert_eq!(first.events.len(), 1);
+        assert!(first.losses.is_empty());
+
+        fs::write(&path, format!("{first_line}\n{second_line}\n")).unwrap();
+        let second = export_jsonl(
+            ManagedHarness::Copilot,
+            &path,
+            "s",
+            first.source_cursor.as_deref(),
+        )
+        .unwrap();
+        assert_eq!(second.events.len(), 1);
+        assert_eq!(second.events[0].content, "two");
+
+        // Re-reading from scratch yields identical event ids.
+        let replay = export_jsonl(ManagedHarness::Copilot, &path, "s", None).unwrap();
+        assert_eq!(replay.events[0].event_id, first.events[0].event_id);
+        assert_eq!(replay.events[1].event_id, second.events[0].event_id);
     }
 
     fn push_protobuf_varint(output: &mut Vec<u8>, mut value: u64) {

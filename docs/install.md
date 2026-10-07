@@ -1362,8 +1362,9 @@ repository hook files (`.github/hooks/*.json`) are versioned, shared with the
 team and loaded by the Copilot cloud agent, while ai-memory's hook entries
 carry this machine's absolute executable and data-dir paths; committing them
 would point every teammate at one person's install and server.
-`ai-memory run copilot` is not shipped yet; `install-mcp --client copilot`
-remains the VS Code Copilot client.
+`ai-memory run copilot` (alias `copilot-cli`) launches Copilot CLI as a
+managed workstream harness (see [managed workstreams](managed-workstreams.md));
+`install-mcp --client copilot` remains the VS Code Copilot client.
 
 ### Hermes Agent (Nous Research)
 
@@ -2329,7 +2330,7 @@ docker run --rm akitaonrails/ai-memory:latest --help     # full subcommand tree
 | Subcommand | Pattern | What it does |
 |---|---|---|
 | `serve` | `docker compose up -d` (already done) | Run the HTTP MCP server |
-| `run [harness] [args...]` | host wrapper or native binary | Opt into one managed cross-harness workstream; omit the harness to resume the newest usable local session, or name Claude Code, Codex, OpenCode, Pi, Crush, Kimi Code, Command Code, Kiro CLI v2/v3, OMP, Grok Build CLI, or Antigravity CLI explicitly; exact `--yolo` and `--fresh` flags are wrapper-owned and other native arguments pass through |
+| `run [harness] [args...]` | host wrapper or native binary | Opt into one managed cross-harness workstream; omit the harness to resume the newest usable local session, or name Claude Code, Codex, OpenCode, Pi, Crush, Kimi Code, Command Code, Kiro CLI v2/v3, OMP, Grok Build CLI, Antigravity CLI, or GitHub Copilot CLI explicitly; exact `--yolo` and `--fresh` flags are wrapper-owned and other native arguments pass through |
 | `show [--json]` | host wrapper or native binary | Choose a client-local checkout and installed managed harness, or return structured discovery data without launching; remote servers never provide checkout paths |
 | `continue [--workspace NAME]` | host wrapper or native binary | From any directory, revalidate and resume the newest client-local managed checkout; accepts `--yolo` and `--fresh` but no harness-native arguments |
 | `resume [--all] [--workspace NAME] [--search TERM] [--limit N]` | host wrapper or native binary | Interactively choose from all workstreams in the current checkout (no default cutoff), or with `--all` from every valid client-local linked checkout; type to search names, Up/Down selects, Left/Right cycles `auto` plus installed harnesses, Enter launches, and Escape clears the search or cancels; an explicit limit caps initial search results; accepts `--yolo` and `--fresh` |
