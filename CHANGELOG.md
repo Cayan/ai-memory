@@ -204,6 +204,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed structured LLM responses stopped at the output budget
   (`finish_reason = "length"`) or returned without usable content: they now
   fail with redacted terminal errors, without copying the response. (#1130)
+- Fixed an explicit-scope miss giving no hint when an agent passed a
+  `workspace/project` label as the project (for example `project:
+  "myorg/myproject"` with the default workspace): project names never contain
+  `/`, so the error now names the separate `workspace` and `project` arguments
+  to pass. (#1152)
+- Fixed Hermes `post_tool_call` captures losing the tool result and
+  outcome. Hermes nests the tool result at `extra.result` and mirrors the
+  call status at `extra.status`; the extractor previously read only
+  top-level `tool_output`/`tool_response`/`result`, so every Hermes
+  observation body read `(no output captured)` and the outcome stayed
+  `unknown` forever. Output now comes from `extra.result` (falling back to
+  `extra.error_message`), and `extra.status` of `ok`/`error` maps to
+  `success`/`error`. Recognized Hermes tool names that execute code or
+  reach the web (`execute_code`, `browser_exec`, `browser_navigate`,
+  `web_extract`, `web_fetch`, `delegate_task`) classify as `non-file`
+  instead of `unknown`, so their output is no longer dropped by the
+  unknown-family body shortcut. Payload shape verified against Hermes
+  `agent/shell_hooks.py` on 2026-10-07. (#1123)
+- Fixed the "project 'X' is ambiguous" refusal giving no clue which projects
+  collided. It now names each project that answers to the name and the key it
+  answers by (its name, its canonical key, or its legacy key), so an operator
+  whose undeclared clone created `acme-widget` with `widget` as its legacy key
+  can see which project to purge or rename. A restricted project is reported
+  as "a restricted project", never by name, matching the project list. (#1144)
+- Fixed the cross-project profile learning from agent-written prompt text
+  and counting one fanned-out brief as several projects: sentences that read
+  like agent output (markdown bold, `file.ext:line` references) are no longer
+  candidates, the same sentence arriving in several projects within an hour
+  counts as one project toward `min_projects`, and one sentence backs at most
+  one entry. (#1148)
 
 ## [2.6.0] - 2026-10-07
 
