@@ -53,6 +53,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `--yolo` or `--force`, because the prompt is captured session text. (#1127)
 
 ### Fixed
+- Fixed structured LLM responses stopped at the output budget
+  (`finish_reason = "length"`) or returned without usable content: they now
+  fail with redacted terminal errors, without copying the response. (#1130)
+
+## [2.6.1] - 2026-10-08
+
+### Fixed
 - Fixed an explicit-scope miss giving no hint when an agent passed a
   `workspace/project` label as the project (for example `project:
   "myorg/myproject"` with the default workspace): project names never contain
@@ -209,9 +216,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   candidates, the same sentence arriving in several projects within an hour
   counts as one project toward `min_projects`, and one sentence backs at most
   one entry. (#1148)
-- Fixed structured LLM responses stopped at the output budget
-  (`finish_reason = "length"`) or returned without usable content: they now
-  fail with redacted terminal errors, without copying the response. (#1130)
 
 ## [2.6.0] - 2026-10-07
 
@@ -8510,7 +8514,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Consolidator used server startup default project instead of the
   session's actual project.
 
-[Unreleased]: https://github.com/akitaonrails/ai-memory/compare/v2.6.0...HEAD
+[Unreleased]: https://github.com/akitaonrails/ai-memory/compare/v2.6.1...HEAD
+[2.6.1]: https://github.com/akitaonrails/ai-memory/compare/v2.6.0...v2.6.1
 [2.6.0]: https://github.com/akitaonrails/ai-memory/compare/v2.5.2...v2.6.0
 [2.5.2]: https://github.com/akitaonrails/ai-memory/compare/v2.5.1...v2.5.2
 [2.5.1]: https://github.com/akitaonrails/ai-memory/compare/v2.5.0...v2.5.1
