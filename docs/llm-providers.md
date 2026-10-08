@@ -82,7 +82,10 @@ ai-memory llm-test --provider codex --model gpt-5.6-luna --structured --prompt "
 `AI_MEMORY_CURSOR_AGENT` overrides the binary. The provider writes the prompt
 into a temporary workspace and calls `agent --print --mode ask --trust`. It
 does not pass `--yolo` or `--force`: consolidation text is untrusted captured
-content, and those flags would allow tool execution.
+content, and those flags would allow tool execution. The Cursor CLI has no
+JSON-schema mode, so the schema travels in the prompt and the answer is parsed
+and validated against it. The `agent` process inherits the server's
+environment, so run the server with only the credentials it needs.
 
 ```bash
 export AI_MEMORY_LLM_PROVIDER=cursor
