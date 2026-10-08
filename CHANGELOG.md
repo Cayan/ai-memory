@@ -20,6 +20,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   re-running `backfill --force` over sessions imported by ai-memory ≤2.6.0 (or
   plain-backfilling a recovery-replayed session) can duplicate those older
   observations. (#1125)
+- Added `AI_MEMORY_LLM_COMPAT_DISABLE_THINKING` for the `openai-compat`
+  provider (opt-in, off by default, ignored by every other provider): when
+  set, every chat request carries
+  `chat_template_kwargs: {"enable_thinking": false}`, so thinking-capable
+  local engines (vLLM / SGLang serving Qwen3-class models) spend the output
+  budget on the structured payload instead of a reasoning pass. (#1130)
 
 ### Fixed
 - Fixed the cross-project profile rewriting a settled entry whenever new
@@ -170,6 +176,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   multi-page layout (session, concept, decision, gotcha and rule pages, at
   most five). `memory_consolidate` stays for other sessions and headless
   runs. (#1140)
+- Fixed structured LLM responses stopped at the output budget
+  (`finish_reason = "length"`) or returned without usable content: they now
+  fail with redacted terminal errors, without copying the response. (#1130)
 
 ## [2.6.0] - 2026-10-07
 
