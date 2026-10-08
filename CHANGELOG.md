@@ -13,6 +13,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   summaries without an API key. The default model is `cursor-grok-4.6-high`
   ("Grok 4.6"). `AI_MEMORY_CURSOR_AGENT` overrides the binary. The provider never passes
   `--yolo` or `--force`, because the prompt is captured session text. (#1127)
+- Added `ai-memory recover` and a bounded local recovery journal for server
+  outages. Offline managed launches now record only uniquely correlated native
+  session locators; recovery quarantines overlapping spool entries before exact
+  `/hook/batch` transcript replay, journals harnesses without transcript export
+  as spool-only without calling their exporter, retains bounded recovery dedup
+  keys with their sessions,
+  fails closed on terminal drops, and lets only the original owner finish an
+  expired unsuperseded managed run through exact idempotent replay. Backfill
+  and recovery replay now use reserved `recovery_*` idempotency keys, so
+  re-running `backfill --force` over sessions imported by ai-memory ≤2.6.0 (or
+  plain-backfilling a recovery-replayed session) can duplicate those older
+  observations. (#1125)
 
 ### Fixed
 - Fixed the hook spool charging a spooled event's retry budget while the

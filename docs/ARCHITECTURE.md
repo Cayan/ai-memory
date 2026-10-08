@@ -68,7 +68,12 @@ from hook paths.
 2. Server's hook router sanitises the payload (the only path from
    untrusted text into the store), assigns an [`ObservationKind`], and
    enqueues a `WriteCmd` to the writer actor. For native keyed events, the
-   project-scoped key and observation commit together. The key is marked
+   project-scoped key and observation commit together. Ordinary keys expire
+   after 30 days; validated `recovery_<55 hex>` keys are bound to the actual
+   session, agent, event kind, and sanitized event identity and retained until
+   session/project deletion, so a writer cannot preclaim another recovery
+   event and an old journal cannot duplicate observations after ordinary
+   cleanup. The key is marked
    complete only after downstream processing: an incomplete replay resumes
    wiki/handoff effects without another observation, while a completed replay
    is acknowledged and skipped. A bounded per-project/key gate serializes an
@@ -268,8 +273,15 @@ death remains bounded by the renewable lease expiry. An explicit
 `--force-unlock` recovery expires and replaces a selected active lease in the
 same writer transaction, but only when its durable operator attribution equals
 the new run's attribution; the informational `host:pid` lease label is never an
-authorization key. The old run can no longer heartbeat or finish. See [Managed
-cross-harness workstreams](managed-workstreams.md).
+authorization key. The old run can no longer heartbeat or finish normally.
+`POST /workstream/runs/{run_id}/recover/finish` is the narrower outage path: it
+reuses the normal owner and project-write checks and admits an expired run only
+when no newer run in that workstream superseded it. A finished retry validates
+only durable transcript/native/cursor/exit identity and does not regenerate a
+repository checkpoint. Degraded resumed sessions persist a validated native
+source cursor before launch, and bounded recovery export reads only the delta
+on a blocking worker. See [Managed cross-harness
+workstreams](managed-workstreams.md).
 
 ## Hook event vocabulary
 
@@ -674,17 +686,18 @@ hook                        install-mcp          commit
 checkpoints                 restore-page         llm-test
 forget-sweep                lint                 curator
 auto-improve-report         auto-improve         finalize-session
-pending-writes              embed                generate-auth-token
-setup-agent                 bootstrap            install-instructions
-install-skills              reorg                purge-project
-rename-project              move-project         move-session
-uninstall                   upgrade              auth
-user                        completions          handoffs
-purge-session               compact              api-key
-export-okf                  message              doctor
-backfill                    project              reclaim-ledger-versions
-repair-backfill-timestamps  server               backup-agents
-restore-agents              profile
+recover                     pending-writes       embed
+generate-auth-token         setup-agent          bootstrap
+install-instructions        install-skills       reorg
+purge-project               rename-project       move-project
+move-session                uninstall            upgrade
+auth                        user                 completions
+handoffs                    purge-session        compact
+api-key                     export-okf           message
+doctor                      backfill             project
+reclaim-ledger-versions     repair-backfill-timestamps
+server                      backup-agents        restore-agents
+profile
 ```
 
 Run `ai-memory --help` for the full tree.
