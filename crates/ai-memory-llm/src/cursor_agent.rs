@@ -108,8 +108,15 @@ impl CursorAgentProvider {
             .ok_or_else(|| LlmError::UnexpectedShape("cursor agent stderr missing".into()))?;
 
         let collected = timeout(self.timeout, async {
-            let stdout = read_capped(stdout, MAX_STDOUT_BYTES).await?;
-            let stderr = read_capped(stderr, MAX_STDERR_BYTES).await?;
+            // Read both pipes together. Draining stdout to EOF before stderr
+            // starts deadlocks when the child fills the stderr pipe and keeps
+            // stdout open.
+            let (stdout, stderr) = tokio::join!(
+                read_capped(stdout, MAX_STDOUT_BYTES),
+                read_capped(stderr, MAX_STDERR_BYTES),
+            );
+            let stdout = stdout?;
+            let stderr = stderr?;
             let status = child.wait().await.map_err(|err| {
                 LlmError::UnexpectedShape(format!("waiting for cursor agent: {err}"))
             })?;
@@ -176,7 +183,15 @@ struct TempWorkspace {
 impl TempWorkspace {
     fn create() -> LlmResult<Self> {
         let path = std::env::temp_dir().join(format!("ai-memory-cursor-{}", Uuid::now_v7()));
-        std::fs::create_dir(&path).map_err(|err| {
+        let mut builder = std::fs::DirBuilder::new();
+        // Captured session text lands in request.md. A typical umask leaves
+        // create_dir at 0755, world-readable on a shared /tmp.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::DirBuilderExt as _;
+            builder.mode(0o700);
+        }
+        builder.create(&path).map_err(|err| {
             LlmError::UnexpectedShape(format!("creating cursor workspace: {err}"))
         })?;
         Ok(Self { path })

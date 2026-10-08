@@ -12,7 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Agent CLI (`agent --print --mode ask`) so a Cursor subscription can drive
   summaries without an API key. The default model is `cursor-grok-4.6-high`
   ("Grok 4.6"). `AI_MEMORY_CURSOR_AGENT` overrides the binary. The provider never passes
-  `--yolo` or `--force`, because the prompt is captured session text.
+  `--yolo` or `--force`, because the prompt is captured session text. (#1127)
 
 ### Fixed
 - Fixed the hook spool charging a spooled event's retry budget while the
