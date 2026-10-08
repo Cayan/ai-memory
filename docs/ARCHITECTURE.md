@@ -1067,7 +1067,7 @@ stopwords or adding a ranking signal.
 **LLM provider env** (opt-in):
 ```
 AI_MEMORY_LLM_PROVIDER     anthropic | anthropic-oauth | openai | openai-oauth | codex | copilot |
-                           gemini | openai-compat | opencode
+                           cursor | gemini | openai-compat | opencode
 AI_MEMORY_LLM_MODEL        optional when the provider has a default; e.g. claude-haiku-4-5, gpt-5.4-mini
 ANTHROPIC_API_KEY / OPENAI_API_KEY / GEMINI_API_KEY / LLM_API_KEY
 AI_MEMORY_LLM_BASE_URL     required for openai-compat (Ollama, vLLM); optional override for
@@ -1108,6 +1108,7 @@ AI_MEMORY_LLM_HEADERS      optional extra HTTP headers on every chat request, as
 AI_MEMORY_RERANKER         optional `llm`; reranks project/scopes query candidates
 COPILOT_GITHUB_TOKEN       optional GitHub token for copilot
 AI_MEMORY_CODEX_EXECUTABLE optional Codex executable; defaults to codex on PATH
+AI_MEMORY_CURSOR_AGENT     optional Cursor Agent CLI executable for cursor; defaults to agent on PATH
 GITHUB_COPILOT_API_TOKEN   optional pre-minted Copilot API token
 COPILOT_API_URL            optional Copilot API base URL override
 ```

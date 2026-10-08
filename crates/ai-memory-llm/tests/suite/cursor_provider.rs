@@ -105,3 +105,69 @@ async fn fenced_json_is_parsed() {
         .unwrap();
     assert_eq!(value["answer"], 1);
 }
+
+fn script_agent(dir: &Path, body: &str) -> PathBuf {
+    let path = dir.join("agent");
+    std::fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
+    let mut perms = std::fs::metadata(&path).unwrap().permissions();
+    perms.set_mode(0o755);
+    std::fs::set_permissions(&path, perms).unwrap();
+    path
+}
+
+/// A child that floods stderr past the pipe buffer before writing stdout
+/// must not hang the call: both pipes drain together, and a stream over its
+/// cap ends the call at once instead of waiting out the timeout.
+#[tokio::test]
+async fn a_stderr_flood_neither_hangs_nor_blocks_stdout() {
+    let dir = TempDir::new();
+    // 40 KiB of stderr, then the answer: within the cap, so it succeeds.
+    let ok = script_agent(
+        &dir.0,
+        "head -c 40960 /dev/zero | tr '\\0' e >&2\nprintf 'OK\\n'",
+    );
+    let response = tokio::time::timeout(
+        std::time::Duration::from_secs(20),
+        provider(ok, "default").complete(ChatRequest::user_prompt("hi")),
+    )
+    .await
+    .expect("a 40 KiB stderr must not hang the call")
+    .unwrap();
+    assert_eq!(response.text, "OK");
+
+    // 200 KiB of stderr while stdout stays open: over the cap, so it fails
+    // fast instead of blocking on the full stderr pipe.
+    let flood = script_agent(
+        &dir.0,
+        "head -c 204800 /dev/zero | tr '\\0' e >&2\nsleep 30\nprintf 'late\\n'",
+    );
+    let err = tokio::time::timeout(
+        std::time::Duration::from_secs(20),
+        provider(flood, "default").complete(ChatRequest::user_prompt("hi")),
+    )
+    .await
+    .expect("a stderr flood must not hang the call")
+    .unwrap_err();
+    assert!(err.to_string().contains("size cap"), "{err}");
+}
+
+/// The per-call workspace holds the prompt (captured session text), so it is
+/// created private to the server's user.
+#[tokio::test]
+async fn the_prompt_workspace_is_private() {
+    let dir = TempDir::new();
+    let sink = dir.0.join("mode");
+    let agent = script_agent(
+        &dir.0,
+        &format!(
+            "ls -ld . > {}\nprintf 'OK\\n'",
+            sh_single(&sink.display().to_string())
+        ),
+    );
+    provider(agent, "default")
+        .complete(ChatRequest::user_prompt("hi"))
+        .await
+        .unwrap();
+    let listing = std::fs::read_to_string(&sink).unwrap();
+    assert!(listing.starts_with("drwx------"), "{listing}");
+}

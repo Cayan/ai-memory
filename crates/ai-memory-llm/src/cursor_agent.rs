@@ -108,8 +108,15 @@ impl CursorAgentProvider {
             .ok_or_else(|| LlmError::UnexpectedShape("cursor agent stderr missing".into()))?;
 
         let collected = timeout(self.timeout, async {
-            let stdout = read_capped(stdout, MAX_STDOUT_BYTES).await?;
-            let stderr = read_capped(stderr, MAX_STDERR_BYTES).await?;
+            // Both pipes drain at once: reading stdout to EOF first would
+            // leave a chatty child blocked on a full stderr pipe until the
+            // timeout. `try_join!` also stops at the first capped stream
+            // instead of waiting on the other one (the child is killed on
+            // drop).
+            let (stdout, stderr) = tokio::try_join!(
+                read_capped(stdout, MAX_STDOUT_BYTES),
+                read_capped(stderr, MAX_STDERR_BYTES)
+            )?;
             let status = child.wait().await.map_err(|err| {
                 LlmError::UnexpectedShape(format!("waiting for cursor agent: {err}"))
             })?;
@@ -176,7 +183,12 @@ struct TempWorkspace {
 impl TempWorkspace {
     fn create() -> LlmResult<Self> {
         let path = std::env::temp_dir().join(format!("ai-memory-cursor-{}", Uuid::now_v7()));
-        std::fs::create_dir(&path).map_err(|err| {
+        // The prompt is captured session text: keep the workspace private
+        // to the server's user on a shared temp directory.
+        let mut builder = std::fs::DirBuilder::new();
+        #[cfg(unix)]
+        std::os::unix::fs::DirBuilderExt::mode(&mut builder, 0o700);
+        builder.create(&path).map_err(|err| {
             LlmError::UnexpectedShape(format!("creating cursor workspace: {err}"))
         })?;
         Ok(Self { path })
