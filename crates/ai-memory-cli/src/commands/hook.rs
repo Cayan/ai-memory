@@ -902,7 +902,7 @@ where
         let entry =
             hook_spool::entry_for(event_url, payload.clone(), effective_token, oidc_present)
                 .routed_to(profile_name);
-        if hook_spool::enqueue(&spool, &entry).is_err() {
+        if hook_spool::enqueue_with_config(&spool, &entry, Some(&spool_policy)).is_err() {
             eprintln!(
                 "ai-memory hook warning: failed to spool lifecycle event; capture for this event was skipped"
             );
@@ -1591,6 +1591,7 @@ mod tests {
             hook_spool::DrainResult::default(),
             hook_spool::DrainResult {
                 sent: 12,
+                durable: 12,
                 remaining: 0,
                 dropped: 0,
             },
@@ -1611,6 +1612,7 @@ mod tests {
         let clean = drain_report(&hook_spool::LockedDrainResult::Drained(
             hook_spool::DrainResult {
                 sent: 5,
+                durable: 5,
                 remaining: 0,
                 dropped: 0,
             },
@@ -1618,6 +1620,7 @@ mod tests {
         let lossy = drain_report(&hook_spool::LockedDrainResult::Drained(
             hook_spool::DrainResult {
                 sent: 0,
+                durable: 0,
                 remaining: 0,
                 dropped: 7,
             },
@@ -1651,6 +1654,7 @@ mod tests {
         let report = drain_report(&hook_spool::LockedDrainResult::Drained(
             hook_spool::DrainResult {
                 sent: 1,
+                durable: 1,
                 remaining: 4,
                 dropped: 0,
             },
