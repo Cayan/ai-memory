@@ -8,6 +8,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `ai-memory run` accepts `copilot` (alias `copilot-cli`) and manages GitHub
+  Copilot CLI as a workstream harness: a fresh session gets a generated
+  `--session-id`, a returning one is resumed with `--resume=<id>`, user
+  selectors (`--resume`, `--continue`, `--session-id`, `--connect`) win,
+  utility subcommands pass through, and `--yolo` maps to Copilot's native
+  `--yolo`. Visible messages, tool calls and results, and compaction summaries
+  are imported read-only from `$COPILOT_HOME/session-state/<uuid>/events.jsonl`
+  (system prompts, hidden reasoning, hook output, and telemetry are excluded),
+  and the existing SessionStart hook delivers the workstream context. The
+  first managed launch auto-wires Copilot's hooks and MCP, and `doctor` now
+  counts its local sessions. Verified against Copilot CLI 1.0.92. (#1040)
+- GitHub Copilot CLI is now a first-class routing target:
+  `install-skills --agent copilot-cli` (and `install-instructions
+  --skills-agent copilot-cli`) writes the managed Agent Skills to the
+  repository's `.github/skills` or, globally, to `$COPILOT_HOME/skills`
+  (default `~/.copilot/skills`); `memory_install_self_routing` returns
+  `copilot_cli` filename and skill-root hints; the routing snippet, the
+  routing-install skill, and the MCP instructions name Copilot CLI with
+  `AGENTS.md`; and `uninstall` sweeps both Copilot roots, removing only
+  marker-bearing ai-memory skills. (#1040)
 - Added `ai-memory recover` and a bounded local recovery journal for server
   outages. Offline managed launches now record only uniquely correlated native
   session locators; recovery quarantines overlapping spool entries before exact

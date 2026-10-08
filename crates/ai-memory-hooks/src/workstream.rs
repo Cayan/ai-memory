@@ -258,6 +258,7 @@ async fn prepare_run(
             | AgentKind::KiroCli
             | AgentKind::Grok
             | AgentKind::AntigravityCli
+            | AgentKind::CopilotCli
     ) {
         return error(
             StatusCode::BAD_REQUEST,
@@ -3353,6 +3354,23 @@ mod tests {
     /// command-line harness" after the user already picked the harness.
     #[tokio::test]
     async fn antigravity_is_accepted_explicitly_but_not_in_the_automatic_pool() {
+        assert_explicit_only_managed_harness(
+            AgentKind::AntigravityCli,
+            "a0d5ac62-2501-4780-b783-76d159c56cb3",
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn copilot_cli_is_accepted_explicitly_but_not_in_the_automatic_pool() {
+        assert_explicit_only_managed_harness(
+            AgentKind::CopilotCli,
+            "318db77d-e19b-4750-82df-192a6b931437",
+        )
+        .await;
+    }
+
+    async fn assert_explicit_only_managed_harness(agent: AgentKind, native_session_id: &str) {
         let temp = TempDir::new().unwrap();
         let store = Store::open(temp.path()).unwrap();
         let state = test_state(&store, temp.path());
@@ -3368,7 +3386,7 @@ mod tests {
                 cwd: "/repo".into(),
                 repo_fingerprint: "repo".into(),
                 worktree_fingerprint: "worktree".into(),
-                agent: AgentKind::AntigravityCli,
+                agent,
                 automatic_harness: false,
                 available_agents: Vec::new(),
                 workstream: None,
@@ -3381,7 +3399,7 @@ mod tests {
         assert_eq!(explicit.status(), StatusCode::OK);
         let body = to_bytes(explicit.into_body(), 64 * 1024).await.unwrap();
         let prepared: PrepareManagedRunResponse = serde_json::from_slice(&body).unwrap();
-        assert_eq!(prepared.resolved_agent, Some(AgentKind::AntigravityCli));
+        assert_eq!(prepared.resolved_agent, Some(agent));
         store
             .writer
             .finish_workstream_run(
@@ -3395,7 +3413,7 @@ mod tests {
                 FinishWorkstreamRun {
                     sanitizer: ai_memory_core::Sanitizer::default(),
                     run_id: prepared.run_id,
-                    native_session_id: Some("a0d5ac62-2501-4780-b783-76d159c56cb3".into()),
+                    native_session_id: Some(native_session_id.into()),
                     source_cursor: None,
                     events: Vec::new(),
                     complete: true,
@@ -3417,9 +3435,9 @@ mod tests {
                 cwd: "/repo".into(),
                 repo_fingerprint: "repo".into(),
                 worktree_fingerprint: "worktree".into(),
-                agent: AgentKind::AntigravityCli,
+                agent,
                 automatic_harness: true,
-                available_agents: vec![AgentKind::AntigravityCli],
+                available_agents: vec![agent],
                 workstream: None,
                 new_workstream: None,
                 force_unlock: false,

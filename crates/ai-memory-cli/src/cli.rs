@@ -520,6 +520,11 @@ pub enum RunHarnessChoice {
     /// Google Antigravity CLI (`agy`).
     #[value(name = "antigravity", alias = "antigravity-cli", alias = "agy")]
     Antigravity,
+    /// GitHub Copilot CLI (`copilot`). `run`'s positional names only
+    /// command-line harnesses, so the bare name cannot mean VS Code Copilot
+    /// here the way `install-mcp --client copilot` does.
+    #[value(name = "copilot", alias = "copilot-cli")]
+    Copilot,
 }
 
 /// Parses the `run` harness positional, additionally wildcarding every
@@ -1756,6 +1761,9 @@ pub enum InstallSkillsAgent {
     Devin,
     /// Grok Build CLI's `.grok/skills` directory.
     Grok,
+    /// GitHub Copilot CLI's `.github/skills` (project) or
+    /// `$COPILOT_HOME/skills` (global, default `~/.copilot/skills`) directory.
+    CopilotCli,
     /// Hermes Agent's `.hermes/skills` directory.
     Hermes,
     /// Install into both Claude Code and `.agents` skill directories.

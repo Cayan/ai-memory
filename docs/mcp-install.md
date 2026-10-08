@@ -237,9 +237,10 @@ native HTTP or generated bridge paths.
 
 ## GitHub Copilot CLI
 
-**Status:** MCP and lifecycle hooks are supported. Handoffs are not injected
-at `SessionStart` yet (see below), and there is no managed workstream
-(`ai-memory run copilot`).
+**Status:** MCP and lifecycle hooks are supported, the `SessionStart` hook
+injects the pending handoff (see below), and `ai-memory run copilot` launches
+Copilot CLI as a managed workstream harness (see
+[managed workstreams](managed-workstreams.md)).
 
 **Config files:** `$COPILOT_HOME/mcp-config.json` for MCP and
 `$COPILOT_HOME/hooks/ai-memory.json` for lifecycle hooks (`COPILOT_HOME`
@@ -1442,8 +1443,9 @@ managed routing package. The `memory_install_self_routing` tool is read-only:
 it returns the slim markered instruction block, marker strings, agent filename
 hints, managed skill payloads (`name`, `description`, `relative_path`,
 `content`), and authoritative project/global target hints for `.claude/skills`,
-`.agents/skills`, `.grok/skills`, and `$GROK_HOME/skills` (default
-`~/.grok/skills`), plus overwrite guidance. Agents should use their own file
+`.agents/skills`, `.grok/skills`, `$GROK_HOME/skills` (default
+`~/.grok/skills`), GitHub Copilot CLI's `.github/skills` and
+`$COPILOT_HOME/skills` (default `~/.copilot/skills`), plus overwrite guidance. Agents should use their own file
 editing tools to write those artifacts while preserving unrelated user content.
 
 If the model doesn't see any of those tools, the MCP registration
