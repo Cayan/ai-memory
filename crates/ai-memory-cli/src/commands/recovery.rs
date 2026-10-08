@@ -32,7 +32,7 @@
 
 use std::collections::HashMap;
 use std::fs::{self, File, OpenOptions};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::str::FromStr as _;
 use std::time::{Duration, Instant};
 
@@ -174,7 +174,7 @@ pub(crate) fn journal_path(data_dir: &Path) -> PathBuf {
 /// only record of what the server missed).
 pub(crate) fn load_journal(data_dir: &Path) -> Result<Vec<JournalEntry>> {
     let path = journal_path(data_dir);
-    refuse_symlink(&path)?;
+    refuse_symlink(data_dir, &path)?;
     let mut file = match open_journal_read(&path) {
         Ok(file) => file,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
@@ -245,7 +245,7 @@ fn mutate_journal(
 ) -> Result<()> {
     validate_journal_entry_limit(data_dir)?;
     let path = journal_path(data_dir);
-    let lock = open_private_lock(&data_dir.join(JOURNAL_LOCK_FILE))?;
+    let lock = open_private_lock(data_dir, &data_dir.join(JOURNAL_LOCK_FILE))?;
     lock.lock_exclusive()
         .with_context(|| format!("locking {}", data_dir.join(JOURNAL_LOCK_FILE).display()))?;
     let mut entries = load_journal(data_dir)?;
@@ -257,7 +257,7 @@ fn mutate_journal(
     let mut rendered =
         serde_json::to_vec_pretty(&journal).context("serializing the recovery journal")?;
     rendered.push(b'\n');
-    refuse_symlink(&path)?;
+    refuse_symlink(data_dir, &path)?;
     if rendered.len() as u64 > MAX_JOURNAL_BYTES {
         bail!(
             "recovery journal {} would exceed the {} byte limit",
@@ -265,17 +265,17 @@ fn mutate_journal(
             MAX_JOURNAL_BYTES
         );
     }
-    write_journal_atomic(&path, &rendered)
+    write_journal_atomic(data_dir, &path, &rendered)
         .with_context(|| format!("writing {}", path.display()))?;
     make_private(&path)?;
     Ok(())
 }
 
-fn write_journal_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
+fn write_journal_atomic(data_dir: &Path, path: &Path, bytes: &[u8]) -> Result<()> {
     let parent = path
         .parent()
         .ok_or_else(|| anyhow!("recovery journal path has no parent"))?;
-    refuse_symlink(parent)?;
+    refuse_symlink(data_dir, parent)?;
     let mut temp = tempfile::Builder::new()
         .prefix(".recovery-journal.")
         .tempfile_in(parent)?;
@@ -284,7 +284,7 @@ fn write_journal_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
         temp.write_all(bytes)?;
         temp.as_file().sync_data()?;
     }
-    refuse_symlink(path)?;
+    refuse_symlink(data_dir, path)?;
     temp.persist(path).map_err(|error| error.error)?;
     if let Ok(directory) = File::open(parent) {
         let _ = directory.sync_all();
@@ -294,7 +294,7 @@ fn write_journal_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
 
 fn validate_journal_entry_limit(data_dir: &Path) -> Result<()> {
     let path = journal_path(data_dir);
-    refuse_symlink(&path)?;
+    refuse_symlink(data_dir, &path)?;
     match fs::metadata(&path) {
         Ok(metadata) if metadata.len() > MAX_JOURNAL_BYTES => bail!(
             "recovery journal {} exceeds the {} byte limit",
@@ -318,14 +318,14 @@ fn open_journal_read(path: &Path) -> std::io::Result<File> {
     options.open(path)
 }
 
-fn open_private_lock(path: &Path) -> Result<File> {
+fn open_private_lock(data_dir: &Path, path: &Path) -> Result<File> {
     if let Some(parent) = path.parent() {
-        refuse_symlink(parent)?;
+        refuse_symlink(data_dir, parent)?;
         crate::commands::path_util::create_private_dir(parent)
             .with_context(|| format!("creating {}", parent.display()))?;
-        refuse_symlink(parent)?;
+        refuse_symlink(data_dir, parent)?;
     }
-    refuse_symlink(path)?;
+    refuse_symlink(data_dir, path)?;
     let mut options = OpenOptions::new();
     options.create(true).read(true).write(true);
     #[cfg(unix)]
@@ -336,27 +336,54 @@ fn open_private_lock(path: &Path) -> Result<File> {
     let file = options
         .open(path)
         .with_context(|| format!("opening {}", path.display()))?;
-    refuse_symlink(path)?;
+    refuse_symlink(data_dir, path)?;
     make_private(path)?;
     Ok(file)
 }
 
-fn refuse_symlink(path: &Path) -> Result<()> {
-    let mut current = PathBuf::new();
-    for component in path.components() {
-        current.push(component.as_os_str());
-        match fs::symlink_metadata(&current) {
-            Ok(metadata) if metadata.file_type().is_symlink() => {
-                bail!("refusing recovery journal symlink {}", current.display());
-            }
-            Ok(_) => {}
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => break,
-            Err(error) => {
-                return Err(error).with_context(|| format!("inspecting {}", current.display()));
-            }
+/// Refuse a symlink at or below `data_dir` on the way to `path`.
+///
+/// The data dir is the trust root. Its ancestors are the operator's and the
+/// system's (`/var` is a symlink to `/private/var` on macOS, `/home` is often
+/// a symlink), so they are not inspected. The data dir itself, and every
+/// component inside it, must not be a symlink: that is where another local
+/// user could plant one. The comparison is lexical; canonicalizing would
+/// rewrite the ancestors this deliberately trusts.
+fn refuse_symlink(data_dir: &Path, path: &Path) -> Result<()> {
+    let relative = path.strip_prefix(data_dir).with_context(|| {
+        format!(
+            "recovery journal path {} is outside the data dir {}",
+            path.display(),
+            data_dir.display()
+        )
+    })?;
+    if !refuse_symlink_component(data_dir)? {
+        return Ok(());
+    }
+    let mut current = data_dir.to_path_buf();
+    for component in relative.components() {
+        let Component::Normal(component) = component else {
+            bail!("recovery journal path contains a non-normal component");
+        };
+        current.push(component);
+        if !refuse_symlink_component(&current)? {
+            break;
         }
     }
     Ok(())
+}
+
+/// Fail if `path` is a symlink; `Ok(false)` once it does not exist (nothing
+/// below a missing component can exist either).
+fn refuse_symlink_component(path: &Path) -> Result<bool> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.file_type().is_symlink() => {
+            bail!("refusing recovery journal symlink {}", path.display());
+        }
+        Ok(_) => Ok(true),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(error).with_context(|| format!("inspecting {}", path.display())),
+    }
 }
 
 #[cfg(unix)]
@@ -1373,6 +1400,45 @@ mod tests {
         .unwrap_err();
         assert!(format!("{error:#}").contains("symlink"), "{error:#}");
         assert!(!outside.path().join(JOURNAL_FILE).exists());
+    }
+
+    /// A symlink ABOVE the data dir is the operator's or the system's (macOS
+    /// `/var` → `/private/var`): the journal works through it. The data dir
+    /// is reached here only through `link/`, and nothing inside it is a link.
+    #[cfg(unix)]
+    #[test]
+    fn a_symlinked_ancestor_of_the_data_dir_is_trusted() {
+        let temp = tempfile::tempdir().unwrap();
+        let real = temp.path().join("real");
+        fs::create_dir(&real).unwrap();
+        let link = temp.path().join("link");
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+        let data_dir = link.join("data");
+        append_journal_entry(&data_dir, test_entry("ancestor", JournalKind::DegradedRun)).unwrap();
+        assert_eq!(load_journal(&data_dir).unwrap().len(), 1);
+        assert!(real.join("data").join(JOURNAL_FILE).exists());
+    }
+
+    /// The trust stops at the data dir: a link planted on the lock path
+    /// inside a data dir reached through a symlinked ancestor is still
+    /// refused, and its target is never touched.
+    #[cfg(unix)]
+    #[test]
+    fn a_symlink_inside_a_data_dir_under_a_symlinked_ancestor_is_refused() {
+        let temp = tempfile::tempdir().unwrap();
+        let real = temp.path().join("real");
+        fs::create_dir_all(real.join("data")).unwrap();
+        let link = temp.path().join("link");
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+        let data_dir = link.join("data");
+        let outside = temp.path().join("outside-journal.json");
+        fs::write(&outside, b"canary").unwrap();
+        std::os::unix::fs::symlink(&outside, journal_path(&data_dir)).unwrap();
+        let error =
+            append_journal_entry(&data_dir, test_entry("planted", JournalKind::DegradedRun))
+                .unwrap_err();
+        assert!(format!("{error:#}").contains("symlink"), "{error:#}");
+        assert_eq!(fs::read(&outside).unwrap(), b"canary");
     }
 
     #[cfg(windows)]

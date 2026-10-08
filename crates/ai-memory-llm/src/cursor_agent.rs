@@ -185,9 +185,15 @@ impl TempWorkspace {
         let path = std::env::temp_dir().join(format!("ai-memory-cursor-{}", Uuid::now_v7()));
         // The prompt is captured session text: keep the workspace private
         // to the server's user on a shared temp directory.
-        let mut builder = std::fs::DirBuilder::new();
         #[cfg(unix)]
-        std::os::unix::fs::DirBuilderExt::mode(&mut builder, 0o700);
+        let builder = {
+            use std::os::unix::fs::DirBuilderExt as _;
+            let mut builder = std::fs::DirBuilder::new();
+            builder.mode(0o700);
+            builder
+        };
+        #[cfg(not(unix))]
+        let builder = std::fs::DirBuilder::new();
         builder.create(&path).map_err(|err| {
             LlmError::UnexpectedShape(format!("creating cursor workspace: {err}"))
         })?;
