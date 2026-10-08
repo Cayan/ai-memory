@@ -2703,6 +2703,8 @@ pub enum LlmProviderChoice {
     Copilot,
     /// OpenCode cloud API (Go by default; AI_MEMORY_LLM_BASE_URL selects Zen).
     Opencode,
+    /// Cursor subscription via the logged-in `agent` CLI (`--print --mode ask`).
+    Cursor,
 }
 
 /// Arguments for `embed`.
