@@ -113,6 +113,15 @@ fn valid_semver_identifiers(value: &str, reject_leading_zero_numeric: bool) -> b
         })
 }
 
+/// Native transcript support available to recovery and backfill.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TranscriptCapability {
+    /// The native store can export a normalized visible-event transcript.
+    Export,
+    /// Recovery can only rely on lifecycle events retained in the hook spool.
+    SpoolOnly,
+}
+
 /// Harnesses with native-session and transcript adapters.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ManagedHarness {
@@ -164,6 +173,15 @@ impl ManagedHarness {
             "grok" | "grok-build" => Some(Self::Grok),
             "antigravity" | "antigravity-cli" | "agy" => Some(Self::Antigravity),
             _ => None,
+        }
+    }
+
+    /// Recovery capability of this harness's native session store.
+    #[must_use]
+    pub const fn transcript_capability(self) -> TranscriptCapability {
+        match self {
+            Self::Antigravity => TranscriptCapability::SpoolOnly,
+            _ => TranscriptCapability::Export,
         }
     }
 
@@ -3435,6 +3453,36 @@ mod tests {
             ManagedHarness::Antigravity,
             &[OsString::from("-i"), OsString::from("start here")]
         ));
+    }
+
+    #[test]
+    fn transcript_capability_marks_only_antigravity_spool_only() {
+        for harness in [
+            ManagedHarness::Claude,
+            ManagedHarness::Codex,
+            ManagedHarness::OpenCode,
+            ManagedHarness::OpenCode2,
+            ManagedHarness::Pi,
+            ManagedHarness::Crush,
+            ManagedHarness::Omp,
+            ManagedHarness::Kimi,
+            ManagedHarness::CommandCode,
+            ManagedHarness::Kiro,
+            ManagedHarness::KiroV3,
+            ManagedHarness::Grok,
+            ManagedHarness::Antigravity,
+        ] {
+            assert_eq!(
+                harness.transcript_capability(),
+                if harness == ManagedHarness::Antigravity {
+                    TranscriptCapability::SpoolOnly
+                } else {
+                    TranscriptCapability::Export
+                },
+                "{}",
+                harness.as_str()
+            );
+        }
     }
 
     #[test]
