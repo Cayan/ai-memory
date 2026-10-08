@@ -19,7 +19,8 @@ fn sh_single(value: &str) -> String {
 fn fake_agent(dir: &Path, sink: &Path, stdout: &str) -> PathBuf {
     let path = dir.join("agent");
     let script = format!(
-        "#!/bin/sh\nprintf '%s\\n' \"$@\" > {}\ncase \" $* \" in\n  *' --yolo '*|*' --force '*) echo refusing >&2; exit 2 ;;\nesac\nprintf '%s\\n' {}\n",
+        "#!/bin/sh\nmode=$(stat -c %a . 2>/dev/null || stat -f %Lp .)\nprintf '%s\\n' \"$@\" > {}\nprintf '%s\\n' \"$mode\" >> {}\ncase \" $* \" in\n  *' --yolo '*|*' --force '*) echo refusing >&2; exit 2 ;;\nesac\nprintf '%s\\n' {}\n",
+        sh_single(&sink.display().to_string()),
         sh_single(&sink.display().to_string()),
         sh_single(stdout),
     );
@@ -72,6 +73,7 @@ async fn ask_mode_returns_text_without_yolo() {
     assert!(!argv.contains("--yolo"), "{argv}");
     assert!(!argv.contains("--force"), "{argv}");
     assert!(argv.contains(CURSOR_DEFAULT_MODEL), "{argv}");
+    assert!(argv.lines().any(|line| line == "700"), "{argv}");
 }
 
 #[tokio::test]
