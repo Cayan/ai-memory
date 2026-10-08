@@ -143,8 +143,7 @@ Core design:
 - **LLM is opt-in.** Zero-LLM mode still captures, searches (FTS5), and
   writes rule-based summaries. Providers (Anthropic, OpenAI, OpenAI/Codex
   OAuth, GitHub Copilot, Gemini, OpenAI-compatible endpoints, Cursor Agent
-  CLI) enable
-  consolidation, lint, and the auto-improvement loop.
+  CLI) enable consolidation, lint, and the auto-improvement loop.
 - **Per-project isolation by construction**: every row and page is keyed
   by `(workspace_id, project_id, path)`, resolved from the caller's cwd,
   a `.ai-memory.toml` marker file, or explicit scope arguments.
