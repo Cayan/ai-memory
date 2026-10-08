@@ -53,6 +53,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `--yolo` or `--force`, because the prompt is captured session text. (#1127)
 
 ### Fixed
+- Fixed an explicit-scope miss giving no hint when an agent passed a
+  `workspace/project` label as the project (for example `project:
+  "myorg/myproject"` with the default workspace): project names never contain
+  `/`, so the error now names the separate `workspace` and `project` arguments
+  to pass. (#1152)
 - Fixed the cross-project profile rewriting a settled entry whenever new
   evidence merely agreed with it: a statement now changes only when the ruling
   or its scope does (the LLM merge reports `changed`), so the line every project
@@ -63,15 +68,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   topic grouping no longer compares every candidate with every other, which
   grew quadratically on long-lived installs. See
   `docs/design-cross-project-profile.md` §11. (#1000)
-- Fixed the scheduled auto-improve tests' intermittent empty log captures
-  (the same latent flaw #1116 fixed for the hooks checkpoint test): a shared
-  `warn!` callsite's first-in-process execution on a bare thread caches
-  `Interest::never()`, after which no per-test `set_default` capture ever
-  sees the event under single-process harnesses (libtest, Windows CI). The
-  tick outcome now carries the typed `failure_summaries` and
-  `skipped_proposals` the warnings mirror, and the tests assert those
-  instead of a captured log stream. Logged messages and levels are
-  unchanged. (#1118)
 - Fixed hook observation bodies being capped *before* the sanitizer ever saw
   them: excerpt extraction (`tool: …` bodies, user prompts, notifications,
   post-compaction summaries, extension bodies) applied its 2 KB / 16 KB
@@ -150,7 +146,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `class=provider status=400`) instead of the error's `Display`, which for a
   provider failure includes the upstream response body. The default path
   (no `answer`) is unchanged. (#1132)
-- Hermes `post_tool_call` payloads now capture the tool result and a proven
+- Fixed Hermes `post_tool_call` captures losing the tool result and
   outcome. Hermes nests the tool result at `extra.result` and mirrors the
   call status at `extra.status`; the extractor previously read only
   top-level `tool_output`/`tool_response`/`result`, so every Hermes
@@ -201,27 +197,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   multi-page layout (session, concept, decision, gotcha and rule pages, at
   most five). `memory_consolidate` stays for other sessions and headless
   runs. (#1140)
-- Fixed structured LLM responses stopped at the output budget
-  (`finish_reason = "length"`) or returned without usable content: they now
-  fail with redacted terminal errors, without copying the response. (#1130)
-- Fixed an explicit-scope miss giving no hint when an agent passed a
-  `workspace/project` label as the project (for example `project:
-  "myorg/myproject"` with the default workspace): project names never contain
-  `/`, so the error now names the separate `workspace` and `project` arguments
-  to pass. (#1152)
-- Fixed Hermes `post_tool_call` captures losing the tool result and
-  outcome. Hermes nests the tool result at `extra.result` and mirrors the
-  call status at `extra.status`; the extractor previously read only
-  top-level `tool_output`/`tool_response`/`result`, so every Hermes
-  observation body read `(no output captured)` and the outcome stayed
-  `unknown` forever. Output now comes from `extra.result` (falling back to
-  `extra.error_message`), and `extra.status` of `ok`/`error` maps to
-  `success`/`error`. Recognized Hermes tool names that execute code or
-  reach the web (`execute_code`, `browser_exec`, `browser_navigate`,
-  `web_extract`, `web_fetch`, `delegate_task`) classify as `non-file`
-  instead of `unknown`, so their output is no longer dropped by the
-  unknown-family body shortcut. Payload shape verified against Hermes
-  `agent/shell_hooks.py` on 2026-10-07. (#1123)
 - Fixed the "project 'X' is ambiguous" refusal giving no clue which projects
   collided. It now names each project that answers to the name and the key it
   answers by (its name, its canonical key, or its legacy key), so an operator
@@ -234,6 +209,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   candidates, the same sentence arriving in several projects within an hour
   counts as one project toward `min_projects`, and one sentence backs at most
   one entry. (#1148)
+- Fixed structured LLM responses stopped at the output budget
+  (`finish_reason = "length"`) or returned without usable content: they now
+  fail with redacted terminal errors, without copying the response. (#1130)
 
 ## [2.6.0] - 2026-10-07
 
